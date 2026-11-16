@@ -80,7 +80,7 @@ export default function Projector({ round }: { round: string }) {
           ))}
           {mystery && (
             <div style={{ marginTop: 22, background: 'var(--bg)', color: 'var(--ink)', borderRadius: 18, padding: '8px 16px' }}>
-              <Feed items={feed.slice(0, 3)} names={names} tz={DEFAULT_TZ} />
+              <Feed items={feed.slice(0, 2)} names={names} tz={DEFAULT_TZ} />
             </div>
           )}
         </div>

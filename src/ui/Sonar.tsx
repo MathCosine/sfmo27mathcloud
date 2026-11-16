@@ -23,7 +23,8 @@ export const Sonar = memo(function Sonar({ blips, me, max = 200, labels = true, 
     return out.join('');
   }, []);
   const top = Math.max(max, ...blips.map((b) => b.score));
-  const rings = [0.25, 0.5, 0.75, 1];
+  // Rings at round scores (¾, ½, ¼ of the top, and 0), placed on the same square-root scale as the blips.
+  const rings = [0.75, 0.5, 0.25, 0].map((f) => ({ k: Math.sqrt(1 - f), score: Math.round(top * f) }));
   return (
     <svg className="sonar" viewBox="0 0 400 400" role={decorative ? undefined : 'img'} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : 'Depth sonar: the centre is the surface, the edge is Rock Bottom'}>
       <defs>
@@ -38,12 +39,12 @@ export const Sonar = memo(function Sonar({ blips, me, max = 200, labels = true, 
       </defs>
       <circle cx={C} cy={C} r={R + 24} fill="url(#sonar-bg)" />
       <path d={ticks} stroke="#3a4866" strokeWidth="1.2" />
-      {rings.map((k) => (
+      {rings.map(({ k }) => (
         <circle key={k} cx={C} cy={C} r={R * k} fill="none" stroke="#24304a" strokeWidth={k === 1 ? 1.4 : 1} />
       ))}
       <path d={`M${C - R} ${C}H${C + R}M${C} ${C - R}V${C + R}`} stroke="#24304a" strokeWidth="1" />
-      {labels && rings.map((k) => (
-        <text key={k} x={C + 4} y={C - R * k + 12} fontSize="9.5">{Math.round(top * (1 - k * k))}</text>
+      {labels && rings.map(({ k, score }) => (
+        <text key={k} x={C + 4} y={C - R * k + 12} fontSize="9.5">{score}</text>
       ))}
       <g className="sweep">
         <path d={`M${C} ${C}L${C + R} ${C}A${R} ${R} 0 0 0 ${C + R * Math.cos(-0.55)} ${C + R * Math.sin(-0.55)}Z`} fill="url(#sonar-sweep)" />

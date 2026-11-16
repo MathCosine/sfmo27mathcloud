@@ -29,13 +29,14 @@ export const homeCache = createStore<Home | null>(null);
 
 export function StudentApp({ route }: { route: string }) {
   const student = useStudent()!;
+  const roundId = route.startsWith('round-') ? route.slice(6) : null;
+  // Inside a round, the round's own updates carry what matters; check home rarely.
   const home = usePoll(async () => {
     const h = await call<Home>('s_home', { token: token() });
     homeCache.set(h);
     return h;
-  }, 12000, [student.student.id]);
+  }, roundId ? 60000 : 12000, [student.student.id]);
 
-  const roundId = route.startsWith('round-') ? route.slice(6) : null;
   return (
     <div className="shell">
       <TopBar />

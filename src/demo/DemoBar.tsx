@@ -7,12 +7,17 @@ import { Spinner } from '../ui/kit';
 import { DEMO_PASSWORD, DEMO_STAFF, DEMO_STUDENT, outage } from './constants';
 
 const ready = createStore(false);
-if (IS_DEMO) backend().then(() => ready.set(true)).catch((e) => console.error('demo failed to start', e));
+const failed = createStore('');
+if (IS_DEMO) backend().then(() => ready.set(true)).catch((e) => {
+  console.error('demo failed to start', e);
+  failed.set(e?.message ? String(e.message).slice(0, 140) : 'unknown error');
+});
 
 /** The demo's own controls: jump between the people who use the portal. */
 export function DemoBar() {
   const isReady = useStore(ready);
   const down = useStore(outage);
+  const error = useStore(failed);
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState('');
 
@@ -50,7 +55,7 @@ export function DemoBar() {
       </button>
       {open && (
         <div className="demobar-body">
-          <span className="demobar-note">{isReady ? 'Everything runs in this tab. Bot teams are playing.' : 'Setting up a demo contest…'}</span>
+          <span className="demobar-note">{error ? `The demo couldn't start in this browser (${error}). Try Chrome, Edge or Firefox.` : isReady ? 'Everything runs in this tab. Bot teams are playing.' : 'Setting up a demo contest…'}</span>
           <div className="demobar-actions">
             <button onClick={asStudent} disabled={!isReady || !!busy}>{busy === 'student' ? <Spinner size={12} /> : <Icon name="user" size={14} />}Student</button>
             <button onClick={() => asStaff(0)} disabled={!isReady || !!busy}>{busy === 'staff0' ? <Spinner size={12} /> : <Icon name="key" size={14} />}Director</button>

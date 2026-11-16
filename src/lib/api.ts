@@ -97,14 +97,14 @@ if (typeof window !== 'undefined') {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-export const IS_DEMO = __DEMO_BUILD__ || !SUPABASE_URL || !SUPABASE_KEY;
+/** Decided at build time, so a real build carries no demo code and the demo no Supabase client. */
+export const IS_DEMO: boolean = __DEMO_BUILD__;
 
 let backendPromise: Promise<Backend> | null = null;
 export function backend(): Promise<Backend> {
   if (!backendPromise) {
-    backendPromise = IS_DEMO
-      ? import('../demo/backend').then((m) => m.createDemoBackend())
-      : import('./supabase').then((m) => m.createSupabaseBackend(SUPABASE_URL!, SUPABASE_KEY!));
+    if (__DEMO_BUILD__) backendPromise = import('../demo/backend').then((m) => m.createDemoBackend());
+    else backendPromise = import('./supabase').then((m) => m.createSupabaseBackend(SUPABASE_URL!, SUPABASE_KEY!));
   }
   return backendPromise;
 }

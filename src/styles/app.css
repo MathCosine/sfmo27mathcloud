@@ -612,3 +612,8 @@ main { flex: 1; }
   .conn-label { display: none; }
   .conn { padding: 0 9px; }
 }
+
+.gauge-score { white-space: nowrap; }
+.dive-side .gauge-score { font-size: clamp(44px, 4.6vw, 58px); }
+.dive-side .gauge-score small { font-size: 0.36em; }
+.dive-side .gauge > div:last-child { padding-right: 64px !important; }
