@@ -156,22 +156,21 @@ export function ControlRoom() {
     <>
       <header>
         <div>
-          <span className="eyebrow">{s.settings.event_name} · {s.settings.event_subtitle}</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>{live.length === 0 ? 'Control room' : live.length === 1 ? `${live[0].title} is live` : live.length === 2 ? `${live[0].title} and ${live[1].title} are live` : `${live.length} rounds are live`}</h1>
-          <p>{s.counts.online} of {s.counts.students} students are online right now{s.counts.flags ? `, and ${s.counts.flags} tab switches were logged in the last 15 minutes` : ''}.</p>
+          <span className="label-sm">{s.settings.event_name} · {s.settings.event_subtitle}</span>
+          <h1>{live.length === 0 ? 'Control room' : live.length === 1 ? `${live[0].title} is live` : live.length === 2 ? `${live[0].title} and ${live[1].title} are live` : `${live.length} rounds are live`}</h1>
+          <p>
+            <b className="mono">{s.counts.online}</b> of {s.counts.students} students online · <b className="mono">{s.counts.signed_in}</b> signed in today · {s.counts.teams} teams
+            {s.counts.flags ? <> · <a className="linkish" href="#staff-integrity">{s.counts.flags} flags in 15 min</a></> : ''}
+            {s.counts.held ? <> · <a className="linkish" href="#staff-proctor">{s.counts.held} on hold</a></> : ''}
+          </p>
         </div>
         <div className="row">
+          <a className="btn btn-sm" href="#staff-proctor"><Icon name="eye" size={15} />Proctoring</a>
           <a className="btn btn-sm" href="#board-mystery" target="_blank" rel="noreferrer"><Icon name="monitor" size={15} />Mystery board</a>
           <a className="btn btn-sm" href="#board-guts" target="_blank" rel="noreferrer"><Icon name="monitor" size={15} />Guts board</a>
         </div>
       </header>
 
-      <div className="stats" style={{ marginBottom: 28 }}>
-        <div className="stat"><span className="eyebrow">Online now</span><b>{s.counts.online}</b></div>
-        <div className="stat"><span className="eyebrow">Signed in today</span><b>{s.counts.signed_in}<span className="faint" style={{ fontSize: 16 }}>/{s.counts.students}</span></b></div>
-        <div className="stat"><span className="eyebrow">Teams</span><b>{s.counts.teams}</b></div>
-        <div className="stat"><span className="eyebrow">Tab switches · 15 min</span><b style={{ color: s.counts.flags ? 'var(--accent-ink)' : undefined }}>{s.counts.flags}</b></div>
-      </div>
 
       <div className="spread" style={{ marginBottom: 12 }}>
         <h2>Rounds</h2>

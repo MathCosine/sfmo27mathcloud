@@ -11,6 +11,8 @@ import { Sonar } from '../../ui/Sonar';
 import { LiveScore } from '../../ui/live';
 import { Announcements, homeCache, type Announcement, type RoundInfo } from './StudentApp';
 import { RoundClock, WaitingRoom, useIntegrity, AwayNotice } from './RoundPage';
+import { CheckIn, HoldScreen, Paper, useFullscreenRule } from './Guard';
+import { heartbeat } from '../../lib/proctor';
 
 export type BoardRow = { id: string; name: string; score: number; rate: number; sunk: boolean; sunk_at?: string };
 export type FeedItem = {
@@ -28,6 +30,8 @@ type MysteryData = {
   pending: string | null;
   values: { patch: number; torpedo: number };
   problems: { id: string; number: number; points: number; body: string }[] | null;
+  hold: string | null;
+  needs_checkin: boolean;
   announcements: Announcement[];
 };
 
@@ -127,7 +131,7 @@ export function MysteryRound({ id }: { id: string }) {
   const first = useRef(true);
 
   const data = usePoll(async () => {
-    const d = await call<MysteryData>('s_mystery', { token: token(), round: id, since: since.current, ann_since: annSince.current, with_problems: !problems });
+    const d = await call<MysteryData>('s_mystery', { token: token(), round: id, since: since.current, ann_since: annSince.current, with_problems: !problems, hb: heartbeat(id) });
     readAt.current = Date.parse(d.now);
     if (d.problems) setProblems(d.problems);
     if (d.announcements.length) {
@@ -172,6 +176,7 @@ export function MysteryRound({ id }: { id: string }) {
     return () => clearTimeout(t);
   }, [fx]);
   const integ = useIntegrity(id, state === 'open', home?.settings.integrity || 'warn');
+  const fsGate = useFullscreenRule(d?.round ?? ({ id, config: {}, state: 'waiting', title: '' } as unknown as RoundInfo), data.refresh);
 
   const names = useMemo(() => Object.fromEntries((d?.board ?? []).map((b) => [b.id, b.name])), [d?.board]);
   const ranked = useMemo(() => {
@@ -182,6 +187,7 @@ export function MysteryRound({ id }: { id: string }) {
 
   if (!d) return <div className="wrap">{data.error ? <div className="page"><ErrorNote error={data.error} onRetry={data.refresh} /></div> : <PageLoading />}</div>;
   if (d.round.state === 'waiting') return <WaitingRoom round={d.round} tz={tz} />;
+  if (d.needs_checkin) return <CheckIn round={d.round} onDone={() => { setProblems(null); data.refresh(); }} />;
 
   const mine = d.board.find((b) => b.id === team);
   const sunk = !!mine?.sunk;
@@ -235,10 +241,10 @@ export function MysteryRound({ id }: { id: string }) {
               <Rich text={d.round.rules} className="muted" />
             </div>
             {problems ? (
-              problems.map((p, i) => (
+              <Paper roundId={id}>{problems.map((p, i) => (
                 <MysteryQuestion key={p.id} p={p} i={i} roundId={id} answer={d.answers[p.id]} live={live} pending={!!d.pending}
                   onCorrect={async () => { await data.refresh(); setSpend(true); }} refresh={data.refresh} />
-              ))
+              ))}</Paper>
             ) : (
               <p className="faint" style={{ paddingBlock: 30 }}>{closed ? 'The questions are closed.' : 'Loading questions…'}</p>
             )}
@@ -315,6 +321,8 @@ export function MysteryRound({ id }: { id: string }) {
       )}
       {banner && <EventBanner f={banner} onDone={() => setBanner(null)} />}
       {integ.warned !== null && <AwayNotice ms={integ.warned} onClose={integ.dismiss} />}
+      {d.hold && <HoldScreen reason={d.hold} />}
+      {fsGate}
     </>
   );
 }
@@ -361,31 +369,28 @@ function MysteryQuestion({ p, i, roundId, answer, live, pending, onCorrect, refr
   return (
     <section id={`q-${p.number}`} className={`problem mq ${answer ? (answer.correct ? 'mq-ok' : 'mq-no') : ''}`} style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
       <div className="problem-n"><b>{p.number}</b></div>
-      <div style={{ minWidth: 0 }}>
-        <Rich text={p.body} />
+      <div className="q-text"><Rich text={p.body} /></div>
+      <div className="q-answer">
         {answer ? (
           <div className={`mq-result ${justMissed ? 'shake-once' : ''}`}>
-            {answer.correct ? (
-              <span className="chip chip-good"><Icon name="check" size={12} />Right</span>
-            ) : (
-              <span className="chip chip-bad"><Icon name="x" size={12} />Missed</span>
-            )}
-            <span className="muted" style={{ fontSize: 14 }}>
+            {answer.correct ? <span className="chip chip-good"><Icon name="check" size={12} />Right</span> : <span className="chip chip-bad"><Icon name="x" size={12} />Missed</span>}
+            <span className="muted" style={{ fontSize: 13.5 }}>
               {answer.correct
                 ? answer.spent_as === 'patch' ? 'Spent on a hull patch.' : answer.spent_as === 'torpedo' ? `Spent on a torpedo at Team ${answer.target_id}.` : answer.spent_as === 'discard' ? 'Let go.' : 'Hit not used yet.'
-                : 'No more tries on this one for your team.'}
+                : 'No more tries on this one.'}
             </span>
-            <span className="faint" style={{ fontSize: 12.5 }}>· {answer.by}</span>
+            <span className="faint" style={{ fontSize: 12.5 }}>Answered by {answer.by}</span>
           </div>
         ) : (
-          <form className="answer-row" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-            <input className="input input-lg answer mono" value={value} disabled={!live || busy} aria-label={`Answer to question ${p.number}`}
-              placeholder={live ? 'Your team\'s answer' : ''} autoComplete="off" spellCheck={false}
+          <form className="stack" style={{ gap: 6 }} onSubmit={(e) => { e.preventDefault(); submit(); }}>
+            <span className="label-sm">Team answer · one try</span>
+            <input className="input input-lg mono" value={value} disabled={!live || busy} aria-label={`Answer to question ${p.number}`}
+              placeholder={live ? 'Agree on it first' : ''} autoComplete="off" spellCheck={false}
               onChange={(e) => { setValue(e.target.value); setArmed(false); setError(''); }} />
             <button type="submit" className={`btn ${armed ? 'btn-accent armed' : 'btn-primary'}`} disabled={!live || busy || pending || !value.trim()}>
-              {busy ? <><Spinner />Checking</> : armed ? 'Sure? Submit · one try' : 'Submit'}
+              {busy ? <><Spinner />Checking</> : armed ? 'Sure? Submit for good' : 'Submit'}
             </button>
-            {pending && live && <span className="faint" style={{ fontSize: 12.5 }}>Use your hit first</span>}
+            {pending && live && <span className="faint" style={{ fontSize: 12.5 }}>Use your team's hit first.</span>}
           </form>
         )}
         {error && <div className="banner banner-bad" style={{ marginTop: 10 }}><Icon name="alert" /><div>{error}</div></div>}
@@ -464,7 +469,7 @@ function SpendModal({ d, team, readAt, roundId, onClose, onDone }: { d: MysteryD
         ) : choice === 'patch' ? (
           <Button variant="good" busy={busy} disabled={sunk} onClick={() => go_('patch')}>Patch hull · +{points(d.values.patch)}</Button>
         ) : (
-          <Button variant="accent" busy={busy} disabled={!target} onClick={() => go_('torpedo')}>{target ? `Fire at ${target} · −${points(d.values.torpedo)}` : 'Pick a target'}</Button>
+          <Button variant="danger" busy={busy} disabled={!target} onClick={() => go_('torpedo')}>{target ? `Fire at ${target} · −${points(d.values.torpedo)}` : 'Pick a target'}</Button>
         )}
       </div>
     </Modal>

@@ -72,7 +72,7 @@ export function Icon({ name, size = 18, className = '', strokeWidth = 1.6 }: { n
 const BRIDGE = [[5,2,1,13],[7,2,1,13],[5,2,3,1],[5,6,3,1],[16,2,1,13],[18,2,1,13],[16,2,3,1],[16,6,3,1],[0,8,1,1],[1,7,1,1],[2,6,1,1],[3,5,1,1],[4,4,1,1],[19,4,1,1],[20,5,1,1],[21,6,1,1],[22,7,1,1],[23,8,1,1],[8,4,1,1],[9,6,1,1],[10,8,1,1],[11,9,1,1],[12,9,1,1],[13,8,1,1],[14,6,1,1],[15,4,1,1],[9,7,1,4],[14,7,1,4],[0,11,24,1]];
 const SIGMA = [[9,12,5,1],[10,13,1,1],[11,14,1,1],[10,15,1,1],[9,16,5,1]];
 
-export function BridgeMark({ scale = 1.25, color = 'currentColor', accent = 'var(--accent)' }: { scale?: number; color?: string; accent?: string }) {
+export function BridgeMark({ scale = 1.25, color = 'currentColor', accent = 'var(--sub)' }: { scale?: number; color?: string; accent?: string }) {
   return (
     <svg className="brand-mark" width={24 * scale} height={18 * scale} viewBox="0 0 24 18" shapeRendering="crispEdges" aria-hidden="true">
       <g fill={color}>{BRIDGE.map(([x, y, w, h], i) => <rect key={i} x={x} y={y} width={w} height={h} />)}</g>

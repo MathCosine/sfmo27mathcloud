@@ -42,7 +42,7 @@ export function Check({ size = 16 }: { size?: number }) {
   );
 }
 
-export function Brand({ sub = 'Online', compact = false }: { sub?: string; compact?: boolean }) {
+export function Brand({ sub = 'Online division', compact = false }: { sub?: string; compact?: boolean }) {
   return (
     <a className="brand" href="#">
       <BridgeMark />

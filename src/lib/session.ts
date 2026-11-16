@@ -13,6 +13,7 @@ export const token = () => studentSession.get()?.token ?? '';
 
 export async function studentSignIn(id: string, email: string) {
   const r = await call<{ token: string; student: Student }>('s_sign_in', { id, email, agent: navigator.userAgent.slice(0, 200) });
+  signedOut.set('');
   studentSession.set({ token: r.token, student: r.student });
   return r.student;
 }

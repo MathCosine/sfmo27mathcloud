@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { call, createStore, serverNow } from '../../lib/api';
 import { go, storageGet, storageSet, usePoll, useTick } from '../../lib/hooks';
 import { studentSignOut, token, useStudent } from '../../lib/session';
-import { clock, DEFAULT_TZ, greeting, ms, timeOf, zoneName } from '../../lib/format';
+import { clock, dateOf, DEFAULT_TZ, ms, timeOf, zoneName } from '../../lib/format';
 import { Icon } from '../../ui/icons';
 import { Brand, Button, ConnectionPill, ErrorNote, Initials, PageLoading } from '../../ui/kit';
 import { RoundPage } from './RoundPage';
+import { heartbeat } from '../../lib/proctor';
 
 export type RoundInfo = {
   id: string; kind: 'individual' | 'guts' | 'mystery'; title: string; blurb: string; rules: string;
@@ -32,7 +33,7 @@ export function StudentApp({ route }: { route: string }) {
   const roundId = route.startsWith('round-') ? route.slice(6) : null;
   // Inside a round, the round's own updates carry what matters; check home rarely.
   const home = usePoll(async () => {
-    const h = await call<Home>('s_home', { token: token() });
+    const h = await call<Home>('s_home', { token: token(), hb: roundId ? undefined : heartbeat('') });
     homeCache.set(h);
     return h;
   }, roundId ? 60000 : 12000, [student.student.id]);
@@ -94,7 +95,7 @@ function TopBar() {
 
 // ---------------------------------------------------------------- home
 
-const KIND_LABEL: Record<string, string> = { individual: 'Individual', guts: 'Team', mystery: 'Team · live' };
+const KIND_LABEL: Record<string, string> = { individual: 'On your own', guts: 'Team', mystery: 'Team, live' };
 
 export function Announcements({ items, limit = 3 }: { items: Announcement[]; limit?: number }) {
   const [hidden, setHidden] = useState<number[]>(() => storageGet('sfmo27-dismissed', []));
@@ -121,21 +122,25 @@ export function Announcements({ items, limit = 3 }: { items: Announcement[]; lim
 function HomePage({ home }: { home: Home }) {
   useTick(1000);
   const tz = home.settings.timezone || DEFAULT_TZ;
-  const first = home.me.name.split(' ')[0];
   const rounds = home.rounds;
-  const live = rounds.filter((r) => r.state === 'open' || r.state === 'paused');
+  const online = home.team.members.filter((m) => m.online).length;
   return (
     <>
       <section className="hello">
         <div>
-          <p className="eyebrow" style={{ marginBottom: 10 }}>Team {home.team.id} · {home.team.name}</p>
-          <h1>{greeting(tz)}, {first}.</h1>
-          <p className="muted" style={{ marginTop: 10, maxWidth: 620 }}>{home.settings.welcome}</p>
+          <p className="label-sm">Team {home.team.id} · {home.settings.event_name} {home.settings.event_subtitle?.toLowerCase()}</p>
+          <h1>{home.team.name}</h1>
+          <p className="members-inline">
+            {home.team.members.map((m, i) => (
+              <span key={m.id}>{i > 0 && ' · '}{m.name}{m.id === home.me.id ? ' (you)' : ''}</span>
+            ))}
+            <span className="faint"> — {online} of {home.team.members.length} signed in</span>
+          </p>
         </div>
         {home.team.room_url && (
-          <a className="btn btn-primary btn-lg" href={home.team.room_url} target="_blank" rel="noreferrer">
+          <a className="btn btn-lg" href={home.team.room_url} target="_blank" rel="noreferrer">
             <Icon name="video" />
-            Join your Zoom room
+            Your team's Zoom room
             <Icon name="external" size={15} />
           </a>
         )}
@@ -143,23 +148,21 @@ function HomePage({ home }: { home: Home }) {
 
       <div className="home-grid">
         <div className="stack" style={{ gap: 22, minWidth: 0 }}>
+          <NextUp rounds={rounds} tz={tz} />
           <Announcements items={home.announcements} />
           <div>
-            <div className="spread" style={{ marginBottom: 10 }}>
-              <h2>Today</h2>
-              <span className="faint mono" style={{ fontSize: 12.5 }}>Times in {zoneName(tz)} · {live.length ? `${live.length} open now` : 'nothing open yet'}</span>
+            <div className="spread" style={{ marginBottom: 8 }}>
+              <h2>Schedule</h2>
+              <span className="faint mono" style={{ fontSize: 12.5 }}>{dateOf(new Date(serverNow()).toISOString(), tz)} · {zoneName(tz)}</span>
             </div>
-            <div className="timetable stagger">
+            <div className="timetable">
               {rounds.map((r, i) => <Slot key={r.id} r={r} tz={tz} i={i} />)}
             </div>
           </div>
         </div>
         <aside>
           <div className="side-card">
-            <div className="spread" style={{ marginBottom: 6 }}>
-              <span className="eyebrow">Your team</span>
-              <span className="faint" style={{ fontSize: 12.5 }}>{home.team.members.filter((m) => m.online).length} online</span>
-            </div>
+            <h3>Your team</h3>
             {home.team.members.map((m) => (
               <div key={m.id} className="member">
                 <Initials name={m.name} />
@@ -167,26 +170,64 @@ function HomePage({ home }: { home: Home }) {
                   <div style={{ fontWeight: 500 }}>{m.name}{m.id === home.me.id && <span className="faint"> (you)</span>}</div>
                   <div className="faint mono" style={{ fontSize: 12 }}>{m.id}</div>
                 </div>
-                <span className={`presence ${m.online ? 'on' : ''}`} title={m.online ? 'Online now' : 'Not signed in right now'} />
+                <span className={`presence ${m.online ? 'on' : ''}`} title={m.online ? 'Signed in now' : 'Not signed in right now'} />
               </div>
             ))}
           </div>
           <div className="side-card">
-            <span className="eyebrow">Before each round</span>
-            <ul className="checklist">
+            <h3>During every round</h3>
+            <ol className="checklist">
               <li>Camera on in Zoom, showing you and your desk.</li>
-              <li>Only this tab open. Leaving it is recorded.</li>
-              <li>Pencil and paper are fine. No calculators.</li>
-            </ul>
+              <li>Individual rounds: full screen, nothing else open.</li>
+              <li>Team rounds: check in, microphone on.</li>
+              <li>Pencil and paper only. No calculators.</li>
+            </ol>
           </div>
           <div className="side-card">
-            <span className="eyebrow">Need help?</span>
-            <p className="muted" style={{ fontSize: 14, marginTop: 8 }}>{home.settings.help_text}</p>
+            <h3>Need help?</h3>
+            <p className="muted" style={{ fontSize: 14 }}>{home.settings.help_text}</p>
             {home.settings.contact_email && <p className="mono" style={{ fontSize: 13, marginTop: 8 }}>{home.settings.contact_email}</p>}
           </div>
         </aside>
       </div>
     </>
+  );
+}
+
+/** The one thing to do now: the open round, or the next one and when it opens. */
+function NextUp({ rounds, tz }: { rounds: RoundInfo[]; tz: string }) {
+  const now = serverNow();
+  const live = rounds.find((r) => r.state === 'open' && r.id !== 'practice') ?? rounds.find((r) => r.state === 'open' || r.state === 'paused');
+  if (live) {
+    return (
+      <div className="next-up live">
+        <div>
+          <span className="label-sm" style={{ color: 'var(--accent-ink)' }}><span className="dot dot-live" style={{ display: 'inline-block', marginRight: 7, verticalAlign: 1 }} />{live.state === 'paused' ? 'Paused' : 'Open now'}</span>
+          <div style={{ fontWeight: 600, fontSize: 21, letterSpacing: '-0.02em', marginTop: 2 }}>{live.title}</div>
+          <div className="muted" style={{ fontSize: 14 }}>{live.state === 'paused' ? 'The proctors paused it; the clock waits.' : `${clock(ms(live.closes_at) - now)} left${live.progress?.answered ? ` · ${live.progress.answered} answered` : ''}`}</div>
+        </div>
+        <Button variant="accent" size="lg" arrow onClick={() => go(`round-${live.id}`)}>{live.progress?.answered ? 'Continue' : 'Start'}</Button>
+      </div>
+    );
+  }
+  const next = rounds.filter((r) => r.state === 'waiting' && (r.opens_at || r.scheduled_at)).sort((a, b) => ms(a.opens_at ?? a.scheduled_at) - ms(b.opens_at ?? b.scheduled_at))[0];
+  if (next) {
+    const at = next.opens_at ?? next.scheduled_at;
+    return (
+      <div className="next-up">
+        <div>
+          <span className="label-sm">Next: {next.title}</span>
+          <div className="when">{next.opens_at ? `opens in ${clock(ms(next.opens_at) - now)}` : timeOf(at, tz)}</div>
+          <div className="muted" style={{ fontSize: 14, marginTop: 4 }}>{next.opens_at ? `At ${timeOf(next.opens_at, tz)}. ` : 'Planned time. '}Be in your Zoom room 20 minutes before.</div>
+        </div>
+        <Button onClick={() => go(`round-${next.id}`)}>Read the rules</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="next-up">
+      <div><span className="label-sm">Nothing open right now</span><div className="muted" style={{ marginTop: 2 }}>Rounds appear here when your proctors open them.</div></div>
+    </div>
   );
 }
 
@@ -199,8 +240,8 @@ function Slot({ r, tz, i }: { r: RoundInfo; tz: string; i: number }) {
   let action: ReactNode;
   const enter = () => go(`round-${r.id}`);
   if (r.state === 'open') {
-    chip = <span className="chip chip-live"><span className="dot dot-live" />Live · {clock(closes - now)} left</span>;
-    action = <Button variant="accent" arrow onClick={enter}>{r.progress?.answered ? 'Continue' : 'Enter'}</Button>;
+    chip = <span className="chip chip-live"><span className="dot dot-live" />Open · {clock(closes - now)} left</span>;
+    action = <Button variant="primary" arrow onClick={enter}>{r.progress?.answered ? 'Continue' : 'Enter'}</Button>;
   } else if (r.state === 'paused') {
     chip = <span className="chip chip-warn"><Icon name="pause" size={12} />Paused</span>;
     action = <Button onClick={enter}>Open</Button>;
@@ -210,7 +251,7 @@ function Slot({ r, tz, i }: { r: RoundInfo; tz: string; i: number }) {
       : <span className="chip">{r.opens_at || r.scheduled_at ? 'Scheduled' : 'Not open yet'}</span>;
     action = <Button onClick={enter}>Rules</Button>;
   } else {
-    chip = <span className="chip chip-good"><Icon name="check" size={12} />Done</span>;
+    chip = <span className="chip"><Icon name="check" size={12} />Done</span>;
     action = r.show_results ? <Button onClick={enter}>See results</Button> : <span className="faint" style={{ fontSize: 13 }}>Closed</span>;
   }
   const when = r.opens_at || r.scheduled_at;
@@ -226,7 +267,7 @@ function Slot({ r, tz, i }: { r: RoundInfo; tz: string; i: number }) {
       <div style={{ minWidth: 0 }}>
         <div className="slot-title">{r.title} {chip}</div>
         <div className="slot-blurb">{r.blurb}</div>
-        <div className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>{KIND_LABEL[r.kind]}{progress ? ` · ${progress}` : ''}</div>
+        <div className="faint" style={{ fontSize: 12.5, marginTop: 4 }}>{KIND_LABEL[r.kind]}{r.config?.fullscreen ? ' · full screen' : ''}{r.config?.zoom_checkin ? ' · Zoom check-in' : ''}{progress ? ` · ${progress}` : ''}</div>
       </div>
       <div>{action}</div>
     </div>

@@ -29,26 +29,26 @@ export const Sonar = memo(function Sonar({ blips, me, max = 200, labels = true, 
     <svg className="sonar" viewBox="0 0 400 400" role={decorative ? undefined : 'img'} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : 'Depth sonar: the centre is the surface, the edge is Rock Bottom'}>
       <defs>
         <radialGradient id="sonar-bg" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#16223a" />
-          <stop offset="100%" stopColor="#0b1220" />
+          <stop offset="0%" stopColor="#12455f" />
+          <stop offset="100%" stopColor="#0a2c40" />
         </radialGradient>
         <linearGradient id="sonar-sweep" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#ff5a1f" stopOpacity="0" />
-          <stop offset="100%" stopColor="#ff5a1f" stopOpacity="0.55" />
+          <stop offset="0%" stopColor="#f2b52c" stopOpacity="0" />
+          <stop offset="100%" stopColor="#f2b52c" stopOpacity="0.42" />
         </linearGradient>
       </defs>
       <circle cx={C} cy={C} r={R + 24} fill="url(#sonar-bg)" />
-      <path d={ticks} stroke="#3a4866" strokeWidth="1.2" />
+      <path d={ticks} stroke="#3d6a83" strokeWidth="1.2" />
       {rings.map(({ k }) => (
-        <circle key={k} cx={C} cy={C} r={R * k} fill="none" stroke="#24304a" strokeWidth={k === 1 ? 1.4 : 1} />
+        <circle key={k} cx={C} cy={C} r={R * k} fill="none" stroke="#1d4a63" strokeWidth={k === 1 ? 1.4 : 1} />
       ))}
-      <path d={`M${C - R} ${C}H${C + R}M${C} ${C - R}V${C + R}`} stroke="#24304a" strokeWidth="1" />
+      <path d={`M${C - R} ${C}H${C + R}M${C} ${C - R}V${C + R}`} stroke="#1d4a63" strokeWidth="1" />
       {labels && rings.map(({ k, score }) => (
         <text key={k} x={C + 4} y={C - R * k + 12} fontSize="9.5">{score}</text>
       ))}
       <g className="sweep">
         <path d={`M${C} ${C}L${C + R} ${C}A${R} ${R} 0 0 0 ${C + R * Math.cos(-0.55)} ${C + R * Math.sin(-0.55)}Z`} fill="url(#sonar-sweep)" />
-        <path d={`M${C} ${C}L${C + R} ${C}`} stroke="#ff7a45" strokeWidth="1.6" />
+        <path d={`M${C} ${C}L${C + R} ${C}`} stroke="#f2b52c" strokeWidth="1.4" />
       </g>
       {blips.map((b, i) => {
         const angle = (i / Math.max(1, blips.length)) * Math.PI * 2 - Math.PI / 2 + 0.21;
@@ -60,19 +60,26 @@ export const Sonar = memo(function Sonar({ blips, me, max = 200, labels = true, 
         const mine = b.id === me;
         return (
           <g key={b.id} className="blip" style={{ transform: `translate(${x}px, ${y}px)` }}>
-            <circle key={Math.round(b.score / 10)} className="ping" r="4" fill="none" stroke={mine ? '#ff5a1f' : '#9fb3d9'} strokeWidth="1.5" />
+            <circle key={Math.round(b.score / 10)} className="ping" r="4" fill="none" stroke={mine ? '#f2b52c' : '#9ed3ea'} strokeWidth="1.5" />
             {b.sunk ? (
-              <circle r="4.5" fill="none" stroke="#ff7a5c" strokeWidth="1.6" />
+              <circle r="4.5" fill="none" stroke="#e2624a" strokeWidth="1.6" />
+            ) : mine ? (
+              // Your team is the yellow submarine.
+              <g>
+                <rect x={-9} y={-4} width={18} height={8} rx={4} fill="#f2b52c" stroke="#0a2b3f" strokeWidth="1" />
+                <rect x={-2} y={-8} width={5} height={4} rx={1} fill="#f2b52c" stroke="#0a2b3f" strokeWidth="1" />
+                <circle cx={3} cy={0} r={1.6} fill="#0a2b3f" />
+              </g>
             ) : (
-              <circle r={mine ? 6 : 4.5} fill={mine ? '#ff5a1f' : '#e8edf7'} />
+              <circle r={4.5} fill="#e4f3fb" />
             )}
             {labels && (
-              <text x={8} y={4} fontSize="10.5" style={{ fill: mine ? '#ffb08f' : '#8b97b0' }}>{b.id}</text>
+              <text x={mine ? 12 : 8} y={4} fontSize="10.5" style={{ fill: mine ? '#f2b52c' : '#8fb2c4' }}>{b.id}</text>
             )}
           </g>
         );
       })}
-      <circle cx={C} cy={C} r="3" fill="#ff5a1f" />
+      <circle cx={C} cy={C} r="3" fill="#f2b52c" />
     </svg>
   );
 });

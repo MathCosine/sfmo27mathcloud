@@ -11,6 +11,7 @@ import { RoundsList, RoundEditor } from './Rounds';
 import { Roster } from './Roster';
 import { Results } from './Results';
 import { Activity, DangerZone, EventSettings, Integrity, StaffTeam } from './Admin';
+import { Proctoring } from './Proctor';
 
 export type StaffRound = {
   id: string; kind: 'individual' | 'guts' | 'mystery'; title: string; blurb: string; rules: string; sort: number;
@@ -23,7 +24,7 @@ export type StaffState = {
   me: { user_id: string; email: string; name: string; role: 'admin' | 'proctor' };
   settings: Record<string, any>;
   rounds: StaffRound[];
-  counts: { teams: number; students: number; online: number; signed_in: number; flags: number };
+  counts: { teams: number; students: number; online: number; signed_in: number; flags: number; held: number };
   announcements: { id: number; at: string; text: string; tone: string; round_id: string | null; by: string }[];
 };
 
@@ -219,8 +220,9 @@ function JoinStaff({ me, onDone }: { me: Me; onDone: () => void }) {
 
 const NAV: { to: string; label: string; icon: string; admin?: boolean; group?: string }[] = [
   { to: 'staff', label: 'Control room', icon: 'signal', group: 'Live' },
+  { to: 'staff-proctor', label: 'Proctoring', icon: 'eye' },
   { to: 'staff-dive', label: 'Mystery console', icon: 'sub' },
-  { to: 'staff-integrity', label: 'Tab switches', icon: 'eye' },
+  { to: 'staff-integrity', label: 'Flags log', icon: 'flag' },
   { to: 'staff-rounds', label: 'Rounds & problems', icon: 'list', group: 'Set up' },
   { to: 'staff-roster', label: 'Teams & students', icon: 'users' },
   { to: 'staff-results', label: 'Results', icon: 'chart' },
@@ -254,6 +256,7 @@ function StaffShell({ route, onSignOut }: { route: string; onSignOut: () => void
   let page: ReactNode;
   if (route === 'staff') page = <ControlRoom />;
   else if (route === 'staff-dive') page = <Dive />;
+  else if (route === 'staff-proctor') page = <Proctoring />;
   else if (route === 'staff-rounds') page = <RoundsList />;
   else if (route.startsWith('staff-round-')) page = <RoundEditor id={route.slice(12)} />;
   else if (route === 'staff-roster') page = <Roster />;
@@ -284,6 +287,7 @@ function StaffShell({ route, onSignOut }: { route: string; onSignOut: () => void
                 {n.label}
                 {n.to === 'staff' && live.length > 0 && <span className="count" style={{ color: 'var(--accent-ink)' }}>{live.length} live</span>}
                 {n.to === 'staff-integrity' && s.counts.flags > 0 && <span className="count">{s.counts.flags}</span>}
+                {n.to === 'staff-proctor' && s.counts.held > 0 && <span className="count">{s.counts.held} held</span>}
               </a>
             </div>
           ))}

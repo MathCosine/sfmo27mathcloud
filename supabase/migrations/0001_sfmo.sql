@@ -44,6 +44,9 @@ create table if not exists students (
   created_at timestamptz not null default now()
 );
 create index if not exists students_team on students(team_id);
+-- A proctor's hold: the student's screen locks and answers are refused until released.
+alter table students add column if not exists hold_reason text;
+alter table students add column if not exists hold_at timestamptz;
 
 create table if not exists sessions (
   token_hash text primary key,
@@ -54,6 +57,12 @@ create table if not exists sessions (
   agent text not null default ''
 );
 create index if not exists sessions_student on sessions(student_id);
+-- Live state for proctors, reported by the student's page with each request.
+alter table sessions add column if not exists round_id text;
+alter table sessions add column if not exists fullscreen boolean;
+alter table sessions add column if not exists visible boolean;
+-- Set instead of deleting, so the device is told why it was signed out.
+alter table sessions add column if not exists revoked text;
 
 create table if not exists signin_failures (
   student_id text not null,
@@ -191,6 +200,14 @@ create table if not exists mystery_log (
 );
 create index if not exists mystery_log_round on mystery_log(round_id, id);
 
+-- "I'm in my team's Zoom room with camera and microphone on", per student per round.
+create table if not exists checkins (
+  round_id text not null references rounds(id) on delete cascade on update cascade,
+  student_id text not null references students(id) on delete cascade on update cascade,
+  at timestamptz not null,
+  primary key (round_id, student_id)
+);
+
 create table if not exists announcements (
   id bigserial primary key,
   at timestamptz not null,
@@ -246,7 +263,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['settings','teams','students','sessions','signin_failures','rounds','problems','responses',
-    'guts_sets','rulings','mystery_subs','mystery_mods','mystery_answers','mystery_log','announcements','integrity',
+    'guts_sets','rulings','mystery_subs','mystery_mods','mystery_answers','mystery_log','checkins','announcements','integrity',
     'staff','staff_invites','staff_failures','audit']
   loop
     execute format('alter table %I enable row level security', t);
@@ -273,6 +290,7 @@ create or replace function _default_settings() returns jsonb language sql immuta
     'public_boards', false,
     'integrity', 'warn',
     'session_hours', 16,
+    'single_device', true,
     'show_teammates', true
   )
 $$;
@@ -295,6 +313,10 @@ begin
   on conflict (id) do nothing;
 end $$;
 select _seed_rounds();
+-- Proctoring defaults for rounds that don't have them yet: individual rounds run
+-- in full screen; team rounds need a Zoom check-in (camera and microphone on).
+update rounds set config = jsonb_build_object('fullscreen', kind = 'individual', 'zoom_checkin', kind <> 'individual') || config
+ where not (config ? 'fullscreen') or not (config ? 'zoom_checkin');
 
 -- ---------------------------------------------------------------- helpers
 
@@ -326,17 +348,45 @@ create or replace function _auth(p jsonb) returns students language plpgsql as $
 declare
   v_hash text := _hash(p->>'token');
   v_student students;
+  v_revoked text;
+  v_hb jsonb := p->'hb';
+  v_round text := left(nullif(p->'hb'->>'round', ''), 40);
 begin
   if coalesce(p->>'token', '') = '' then perform _fail('Sign in to continue.', 'signed_out'); end if;
-  select st.* into v_student
-    from sessions se join students st on st.id = se.student_id
-   where se.token_hash = v_hash and se.expires_at > sfmo_now();
+  select se.revoked into v_revoked from sessions se where se.token_hash = v_hash and se.expires_at > sfmo_now();
   if not found then perform _fail('Your session has ended. Sign in again.', 'signed_out'); end if;
+  if v_revoked is not null then perform _fail(v_revoked, 'signed_out'); end if;
+  select st.* into v_student from sessions se join students st on st.id = se.student_id where se.token_hash = v_hash;
   if v_student.disabled then perform _fail('This account has been paused by a proctor.', 'disabled'); end if;
-  update sessions set last_seen = sfmo_now()
-   where token_hash = v_hash and last_seen < sfmo_now() - interval '10 seconds';
+  if jsonb_typeof(v_hb) = 'object' then
+    -- What proctors see live: which round this device is on, full screen, tab in front.
+    update sessions set last_seen = sfmo_now(), round_id = v_round,
+           fullscreen = (v_hb->>'fs')::boolean, visible = (v_hb->>'vis')::boolean
+     where token_hash = v_hash
+       and (last_seen < sfmo_now() - interval '5 seconds' or round_id is distinct from v_round
+            or fullscreen is distinct from (v_hb->>'fs')::boolean or visible is distinct from (v_hb->>'vis')::boolean);
+  else
+    update sessions set last_seen = sfmo_now()
+     where token_hash = v_hash and last_seen < sfmo_now() - interval '10 seconds';
+  end if;
   return v_student;
 end $$;
+
+-- Writes refuse a student on hold, or one who hasn't checked in where the round asks for it.
+create or replace function _may_answer(r rounds, s students) returns void language plpgsql as $$
+begin
+  if s.hold_reason is not null then
+    perform _fail('Your proctor has paused you: ' || s.hold_reason, 'hold');
+  end if;
+  if _needs_checkin(r, s) then
+    perform _fail('Check in for this round first: Zoom, camera and microphone on.', 'checkin');
+  end if;
+end $$;
+
+create or replace function _needs_checkin(r rounds, s students) returns boolean language sql stable as $$
+  select coalesce((r.config->>'zoom_checkin')::boolean, false)
+     and not exists (select 1 from checkins c where c.round_id = r.id and c.student_id = s.id)
+$$;
 
 create or replace function _require_staff(p_min_role text default 'proctor') returns staff language plpgsql as $$
 declare v_staff staff;
@@ -697,6 +747,10 @@ begin
   values (_hash(v_token), v_student.id, sfmo_now(), sfmo_now(),
           sfmo_now() + make_interval(hours => greatest(1, least(72, coalesce((v_cfg->>'session_hours')::int, 16)))),
           left(coalesce(p->>'agent', ''), 200));
+  if coalesce((v_cfg->>'single_device')::boolean, true) then
+    update sessions set revoked = 'You signed in on another device, so this one was signed out.'
+     where student_id = v_student.id and token_hash <> _hash(v_token) and revoked is null;
+  end if;
   delete from signin_failures where student_id = v_id or at < sfmo_now() - interval '1 hour';
   delete from sessions where expires_at < sfmo_now() - interval '1 day';
   return jsonb_build_object('token', v_token, 'student', _student_pub(v_student), 'now', sfmo_now());
@@ -751,7 +805,7 @@ begin
       'id', v_team.id, 'name', v_team.name,
       'room_url', coalesce(nullif(v_team.room_url, ''), nullif(v_cfg->>'zoom_url', '')),
       'members', (select coalesce(jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name,
-          'online', exists (select 1 from sessions se where se.student_id = m.id and se.last_seen > v_now - interval '45 seconds' and se.expires_at > v_now))
+          'online', exists (select 1 from sessions se where se.student_id = m.id and se.last_seen > v_now - interval '45 seconds' and se.expires_at > v_now and se.revoked is null))
           order by m.id), '[]'::jsonb)
         from students m where m.team_id = v_team.id and not m.disabled)),
     'settings', v_cfg - 'session_hours',
@@ -781,12 +835,14 @@ begin
   if r.kind = 'guts' then
     select count(*) into v_done from guts_sets where round_id = r.id and team_id = v_student.team_id;
   end if;
-  v_show := v_state in ('open', 'paused') and r.kind <> 'mystery';
+  v_show := v_state in ('open', 'paused') and r.kind <> 'mystery' and not _needs_checkin(r, v_student);
   v_review := v_state = 'closed' and r.show_results and r.kind <> 'mystery';
   return jsonb_build_object(
     'now', v_now,
     'round', _round_pub(r, v_now, v_extra),
     'me', _student_pub(v_student),
+    'hold', v_student.hold_reason,
+    'needs_checkin', v_state in ('open', 'paused') and _needs_checkin(r, v_student),
     'sets_done', v_done,
     'problems', case when v_show or v_review then (
       select coalesce(jsonb_agg(jsonb_build_object('id', pr.id, 'number', pr.number, 'set_no', pr.set_no, 'points', pr.points, 'body', pr.body)
@@ -825,6 +881,7 @@ begin
   if not found then perform _fail('That problem isn''t in this round.', 'not_found'); end if;
   v_why := _writable(r, v_now, _extra(r, v_student));
   if v_why is not null then perform _fail(v_why, 'closed'); end if;
+  perform _may_answer(r, v_student);
   v_entrant := case when r.kind = 'individual' then v_student.id else v_student.team_id end;
   if r.kind = 'guts' then
     -- Serialise with set hand-ins so nothing changes in a set after it is handed in.
@@ -862,6 +919,7 @@ begin
   if not found then perform _fail('That isn''t a Guts round.', 'not_found'); end if;
   v_why := _writable(r, v_now);
   if v_why is not null then perform _fail(v_why, 'closed'); end if;
+  perform _may_answer(r, v_student);
   perform pg_advisory_xact_lock(hashtext('guts:' || r.id || ':' || v_student.team_id));
   select count(*) into v_done from guts_sets where round_id = r.id and team_id = v_student.team_id;
   select coalesce(max(set_no), 0) into v_total from problems where round_id = r.id;
@@ -902,7 +960,7 @@ declare
   v_kind text := left(coalesce(p->>'kind', ''), 24);
   v_round text := p->>'round';
 begin
-  if v_kind not in ('hidden', 'blur', 'fullscreen_exit', 'paste', 'resize', 'second_device') then return jsonb_build_object('ok', false); end if;
+  if v_kind not in ('hidden', 'blur', 'fullscreen_exit', 'no_fullscreen', 'copy', 'paste', 'resize', 'second_device') then return jsonb_build_object('ok', false); end if;
   if not exists (select 1 from rounds where id = v_round) then return jsonb_build_object('ok', false); end if;
   if (select count(*) from integrity where round_id = v_round and student_id = v_student.id) < 400 then
     insert into integrity (at, round_id, student_id, kind, ms)
@@ -956,7 +1014,9 @@ begin
     'values', jsonb_build_object(
       'patch', _m_cfg(r, 'patch', 20) * _m_factor(r.id, 'patch', v_student.team_id, v_now),
       'torpedo', _m_cfg(r, 'torpedo', 10) * _m_factor(r.id, 'torpedo', v_student.team_id, v_now)),
-    'problems', case when v_state in ('open', 'paused') and coalesce((p->>'with_problems')::boolean, true) then (
+    'hold', v_student.hold_reason,
+    'needs_checkin', v_state in ('open', 'paused') and _needs_checkin(r, v_student),
+    'problems', case when v_state in ('open', 'paused') and not _needs_checkin(r, v_student) and coalesce((p->>'with_problems')::boolean, true) then (
       select coalesce(jsonb_agg(jsonb_build_object('id', pr.id, 'number', pr.number, 'points', pr.points, 'body', pr.body) order by pr.number), '[]'::jsonb)
         from problems pr where pr.round_id = r.id) end,
     'announcements', _anns(p, r.id));
@@ -981,6 +1041,7 @@ begin
   select * into v_problem from problems where id = _as_uuid(p->>'problem') and round_id = r.id;
   if not found then perform _fail('That question isn''t in this round.', 'not_found'); end if;
   if v_raw = '' or v_norm = '' then perform _fail('Type an answer first.', 'invalid'); end if;
+  perform _may_answer(r, v_student);
   perform _m_lock(r.id, array[v_student.team_id]);
   if exists (select 1 from mystery_answers where round_id = r.id and team_id = v_student.team_id and correct and spent_as is null) then
     perform _fail('Your team has a hit to use first: patch or torpedo.', 'pending');
@@ -1017,6 +1078,7 @@ begin
   v_why := _m_live(r, v_now, true);
   if v_why is not null then perform _fail(v_why, 'closed'); end if;
   if v_action not in ('patch', 'torpedo', 'discard') then perform _fail('Choose patch or torpedo.', 'invalid'); end if;
+  perform _may_answer(r, v_student);
   if v_action = 'torpedo' then
     if v_target is null or not exists (select 1 from teams where id = v_target) then perform _fail('Pick a team to torpedo.', 'invalid'); end if;
     if v_target = v_student.team_id then perform _fail('You can''t torpedo your own submarine.', 'invalid'); end if;
@@ -1083,6 +1145,68 @@ begin
     'board', case when r.kind = 'guts' then _guts_board(r.id) else _m_board(r.id, v_now, true) end,
     'feed', case when r.kind = 'mystery' then _m_feed(r.id, nullif(p->>'since', '')::bigint, null, false) end,
     'mods', case when r.kind = 'mystery' then _m_mods(r.id, v_now, false) end);
+end $$;
+
+create or replace function s_checkin(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_student students := _auth(p);
+  r rounds;
+begin
+  select * into r from rounds where id = p->>'round' and visible;
+  if not found then perform _fail('That round doesn''t exist.', 'not_found'); end if;
+  if not (coalesce((p->>'room')::boolean, false) and coalesce((p->>'camera')::boolean, false) and coalesce((p->>'mic')::boolean, false)) then
+    perform _fail('Tick all three: in your team''s Zoom room, camera on, microphone on.', 'invalid');
+  end if;
+  insert into checkins (round_id, student_id, at) values (r.id, v_student.id, sfmo_now()) on conflict do nothing;
+  return jsonb_build_object('ok', true, 'now', sfmo_now());
+end $$;
+
+-- ---------------------------------------------------------------- staff API: proctoring
+
+create or replace function st_proctor(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_me staff := _require_staff('proctor'); v_now timestamptz := sfmo_now();
+begin
+  return jsonb_build_object(
+    'now', v_now,
+    'live', (select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'title', r.title, 'kind', r.kind, 'state', _state(r, v_now),
+               'fullscreen', coalesce((r.config->>'fullscreen')::boolean, false), 'zoom_checkin', coalesce((r.config->>'zoom_checkin')::boolean, false)) order by r.sort), '[]'::jsonb)
+             from rounds r where _state(r, v_now) in ('open', 'paused')),
+    'teams', (select coalesce(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'room_url', t.room_url,
+      'students', (select coalesce(jsonb_agg(jsonb_build_object(
+          'id', s.id, 'name', s.name, 'disabled', s.disabled, 'hold_reason', s.hold_reason, 'hold_at', s.hold_at,
+          'devices', (select count(*) from sessions se where se.student_id = s.id and se.revoked is null and se.expires_at > v_now and se.last_seen > v_now - interval '45 seconds'),
+          'last_seen', (select max(se.last_seen) from sessions se where se.student_id = s.id and se.revoked is null),
+          'live', (select jsonb_build_object('round', se.round_id, 'fullscreen', se.fullscreen, 'visible', se.visible, 'at', se.last_seen)
+                     from sessions se where se.student_id = s.id and se.revoked is null and se.expires_at > v_now
+                     order by se.last_seen desc limit 1),
+          'checkins', (select coalesce(jsonb_agg(c.round_id), '[]'::jsonb) from checkins c where c.student_id = s.id),
+          'flags_recent', (select count(*) from integrity i where i.student_id = s.id and i.at > v_now - interval '10 minutes'),
+          'flags', (select count(*) from integrity i where i.student_id = s.id),
+          'last_flag', (select jsonb_build_object('kind', i.kind, 'at', i.at, 'ms', i.ms) from integrity i where i.student_id = s.id order by i.id desc limit 1)
+        ) order by s.id), '[]'::jsonb) from students s where s.team_id = t.id)) order by t.id), '[]'::jsonb)
+      from teams t));
+end $$;
+
+create or replace function st_hold(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_me staff := _require_staff('proctor');
+  v_reason text := nullif(left(btrim(coalesce(p->>'reason', '')), 200), '');
+  v_student text := _norm_id(p->>'student_id');
+  v_team text := _norm_id(p->>'team_id');
+  v_n int;
+begin
+  if coalesce((p->>'release')::boolean, false) then v_reason := null;
+  elsif v_reason is null then v_reason := 'turn your camera and microphone on in Zoom.';
+  end if;
+  update students set hold_reason = v_reason, hold_at = case when v_reason is null then null else sfmo_now() end
+   where (v_student <> '' and id = v_student) or (v_student = '' and v_team <> '' and team_id = v_team);
+  get diagnostics v_n = row_count;
+  perform _log_audit(_staff_label(v_me), case when v_reason is null then 'release' else 'hold' end,
+                     jsonb_build_object('student', nullif(v_student, ''), 'team', nullif(v_team, ''), 'reason', v_reason));
+  return jsonb_build_object('ok', true, 'count', v_n);
 end $$;
 
 -- ---------------------------------------------------------------- staff API: accounts
@@ -1204,8 +1328,9 @@ begin
     'counts', jsonb_build_object(
       'teams', (select count(*) from teams),
       'students', (select count(*) from students),
-      'online', (select count(distinct student_id) from sessions where last_seen > v_now - interval '45 seconds' and expires_at > v_now),
-      'signed_in', (select count(distinct student_id) from sessions where expires_at > v_now),
+      'online', (select count(distinct student_id) from sessions where last_seen > v_now - interval '45 seconds' and expires_at > v_now and revoked is null),
+      'signed_in', (select count(distinct student_id) from sessions where expires_at > v_now and revoked is null),
+      'held', (select count(*) from students where hold_reason is not null),
       'flags', (select count(*) from integrity where at > v_now - interval '15 minutes')),
     'announcements', (select coalesce(jsonb_agg(jsonb_build_object('id', a.id, 'at', a.at, 'text', a.text, 'tone', a.tone, 'round_id', a.round_id, 'by', a.by_staff) order by a.id desc), '[]'::jsonb)
                         from (select * from announcements order by id desc limit 30) a));
@@ -1308,6 +1433,7 @@ begin
   delete from mystery_answers where round_id = p_round;
   delete from mystery_log where round_id = p_round;
   delete from integrity where round_id = p_round;
+  delete from checkins where round_id = p_round;
   delete from announcements where round_id = p_round;
   update rounds set opens_at = null, closes_at = null, paused_at = null where id = p_round;
 end $$;
@@ -1464,8 +1590,9 @@ begin
       'id', t.id, 'name', t.name, 'room_url', t.room_url, 'notes', t.notes,
       'students', (select coalesce(jsonb_agg(jsonb_build_object(
           'id', s.id, 'name', s.name, 'email', s.email, 'extra_minutes', s.extra_minutes, 'disabled', s.disabled,
-          'devices', (select count(*) from sessions se where se.student_id = s.id and se.expires_at > v_now and se.last_seen > v_now - interval '45 seconds'),
-          'sessions', (select count(*) from sessions se where se.student_id = s.id and se.expires_at > v_now),
+          'devices', (select count(*) from sessions se where se.student_id = s.id and se.expires_at > v_now and se.revoked is null and se.last_seen > v_now - interval '45 seconds'),
+          'sessions', (select count(*) from sessions se where se.student_id = s.id and se.expires_at > v_now and se.revoked is null),
+          'hold_reason', s.hold_reason,
           'last_seen', (select max(last_seen) from sessions se where se.student_id = s.id),
           'flags', (select count(*) from integrity i where i.student_id = s.id)) order by s.id), '[]'::jsonb)
         from students s where s.team_id = t.id)) order by t.id), '[]'::jsonb)
@@ -1551,10 +1678,11 @@ begin
   elsif v_action = 'delete_student' then
     delete from students where id = v_student;
   elsif v_action = 'sign_out' then
-    delete from sessions where student_id = v_student or (v_student = '' and student_id in (select id from students where team_id = v_team));
+    update sessions set revoked = 'A proctor signed you out. Sign in again when they tell you to.'
+     where revoked is null and (student_id = v_student or (v_student = '' and student_id in (select id from students where team_id = v_team)));
     get diagnostics v_n = row_count;
   elsif v_action = 'sign_out_all' then
-    delete from sessions;
+    update sessions set revoked = 'The proctors signed everyone out. Sign in again when they tell you to.' where revoked is null;
     get diagnostics v_n = row_count;
   elsif v_action in ('disable', 'enable') then
     update students set disabled = (v_action = 'disable') where id = v_student;
@@ -1779,6 +1907,7 @@ begin
     delete from integrity;
   elsif v_scope = 'sessions' then
     delete from sessions; delete from signin_failures;
+    update students set hold_reason = null, hold_at = null where hold_reason is not null;
   elsif v_scope = 'announcements' then
     delete from announcements;
   elsif v_scope = 'roster' then
@@ -1792,6 +1921,7 @@ begin
     delete from announcements; delete from integrity; delete from staff_invites;
     update settings set data = _default_settings(), updated_at = sfmo_now() where id = 1;
     perform _seed_rounds();
+    update rounds set config = jsonb_build_object('fullscreen', kind = 'individual', 'zoom_checkin', kind <> 'individual') || config;
   else
     perform _fail('Unknown reset.', 'invalid');
   end if;
@@ -1821,7 +1951,7 @@ do $$
 declare fn text;
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then return; end if;
-  foreach fn in array array['s_info','s_sign_in','s_sign_out','s_home','s_round','s_save','s_guts_submit','s_flag',
+  foreach fn in array array['s_info','s_checkin','s_sign_in','s_sign_out','s_home','s_round','s_save','s_guts_submit','s_flag',
                             's_mystery','s_mystery_answer','s_mystery_spend','public_board']
   loop
     execute format('grant execute on function %I(jsonb) to anon, authenticated', fn);
@@ -1829,7 +1959,7 @@ begin
   foreach fn in array array['st_me','st_redeem','st_staff','st_staff_change','st_state','st_settings_save','st_announce',
                             'st_round_save','st_round_delete','st_round_control','st_problems','st_problems_save','st_ruling',
                             'st_roster','st_roster_import','st_roster_change','st_results','st_integrity','st_audit',
-                            'st_mystery','st_mystery_event','st_mystery_mod_end','st_reset']
+                            'st_mystery','st_mystery_event','st_mystery_mod_end','st_reset','st_proctor','st_hold']
   loop
     execute format('grant execute on function %I(jsonb) to authenticated', fn);
   end loop;

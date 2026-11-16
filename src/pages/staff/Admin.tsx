@@ -31,8 +31,8 @@ export function Integrity() {
     <>
       <header>
         <div>
-          <span className="eyebrow">Live</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>Tab switches</h1>
+          <p className="label-sm">Live</p>
+          <h1>Tab switches</h1>
           <p>Every time a student's test tab went into the background or lost focus during an open round, and for how long. A browser can't see phones or a second computer: that's what cameras in Zoom are for.</p>
         </div>
         <div className="row">
@@ -94,8 +94,8 @@ export function StaffTeam() {
     <>
       <header>
         <div>
-          <span className="eyebrow">Admin</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>Staff &amp; invites</h1>
+          <p className="label-sm">Admin</p>
+          <h1>Staff &amp; invites</h1>
           <p>Proctors run rounds, send announcements, fire Mystery events and sign students out. Admins can also edit problems, the roster and settings, and reset things.</p>
         </div>
         <Button variant="primary" icon="plus" onClick={() => setInvite(true)}>Invite someone</Button>
@@ -212,8 +212,8 @@ export function EventSettings() {
     <>
       <header>
         <div>
-          <span className="eyebrow">Admin</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>Event settings</h1>
+          <p className="label-sm">Admin</p>
+          <h1>Event settings</h1>
           <p>What students see before and between rounds, how sign-in works, and how strict the test screen is.</p>
         </div>
       </header>
@@ -241,6 +241,7 @@ export function EventSettings() {
           <h3>Sign-in</h3>
           <Switch id="set-open" checked={f.signin_open !== false} onChange={(v) => set('signin_open', v)} label="Students can sign in" />
           {text('signin_closed_message', 'Message while sign-in is closed')}
+          <Switch id="set-single" checked={f.single_device !== false} onChange={(v) => set('single_device', v)} label="One device per student: signing in somewhere new signs the old device out" />
           <div className="field" style={{ maxWidth: 220 }}><label htmlFor="set-hours">Stay signed in for (hours)</label><input id="set-hours" className="input mono" type="number" min={1} max={72} value={f.session_hours ?? 16} onChange={(e) => set('session_hours', e.target.value)} /></div>
         </section>
         <section className="panel panel-pad stack" style={{ gap: 14 }}>
@@ -266,8 +267,8 @@ export function Activity() {
     <>
       <header>
         <div>
-          <span className="eyebrow">Admin</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>Activity log</h1>
+          <p className="label-sm">Admin</p>
+          <h1>Activity log</h1>
           <p>Every change staff made, newest first: who, what and when. Useful after the contest for appeals.</p>
         </div>
       </header>
@@ -308,8 +309,8 @@ export function DangerZone() {
     <>
       <header>
         <div>
-          <span className="eyebrow">Admin</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>Reset &amp; clean up</h1>
+          <p className="label-sm">Admin</p>
+          <h1>Reset &amp; clean up</h1>
           <p>For rehearsals and the end of the day. Each one asks you to type RESET first, and each is recorded in the activity log. To reset a single round, use Reset on its controls.</p>
         </div>
       </header>

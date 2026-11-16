@@ -131,6 +131,30 @@ up → Clear all answers**. Tell students to try the Practice round the week bef
 
 ---
 
+## Proctoring
+
+What the portal does on its own, set per round under **Rounds & problems → Settings → Proctoring**:
+
+- **Full screen** (on for individual rounds): students start the round with an "Enter full screen" button. Leaving
+  full screen hides the problems behind a "Return to full screen" screen and logs how long they were out. Phones
+  that can't go full screen are allowed, and flagged.
+- **Zoom check-in** (on for team rounds): before the problems appear, each student ticks "in my team's Zoom room",
+  "camera on", "microphone on". The database won't send the problems or take answers until they have.
+- **One device per student** (Event settings): signing in somewhere new signs the old device out, with a message
+  saying why, so a login can't be handed to someone else mid-round.
+- Problem text can't be selected, copied or right-clicked (attempts are logged), and the student's ID and name are
+  watermarked faintly behind it.
+- Leaving the tab is logged on every round.
+
+What proctors do, on the **Proctoring** page (updates every 3 seconds): every student by team, whether they're
+online, which round they're on, whether they're in full screen and the tab is in front, whether they've checked in,
+and their recent flags. "Needs a look" filters to the ones that aren't right. **Hold** a student or a whole team
+when a camera or microphone is off in Zoom: their screen locks with your message ("turn your camera on in Zoom"),
+the database refuses their answers, and it unlocks by itself when you press **Release**.
+
+A browser can't see into Zoom, so the camera and microphone rule rests on the check-in plus proctors watching the
+room, with holds as the enforcement.
+
 ## Contest day
 
 **Before:** Supabase on **Pro** for the month (daily backups, never pauses; about $25). Check **Control room**:
@@ -146,7 +170,8 @@ students) keep going on individual rounds.
 | A few minutes lost to a hiccup | **+5 min** on the round. |
 | You closed too early | **Reopen** for a few minutes. In the Mystery Dive nobody sinks for the time it was shut. |
 | A student's wifi drops | Nothing to do: answers wait on their device and send themselves when it's back. The corner shows "Reconnecting". |
-| A student is on two devices, or someone else is using their login | Teams & students → **Sign out** (or **Pause** to block them until you unpause). |
+| A student's camera or microphone is off | Proctoring → **Hold** (the student or the team), then **Release** when it's fixed. |
+| A student is on two devices, or someone else is using their login | Signing in on a new device already signs the old one out. Teams & students → **Sign out**, or **Pause** to block them until you unpause. |
 | A clarification | Control room → **Announce**: a banner on every screen within seconds, everywhere or only in one round. |
 | An answer that isn't in the key is actually right | Results → **To review** → **Accept**: everyone who gave it is regraded. |
 | A Mystery Dive score needs fixing | Mystery console → the team's **Adjust**. |

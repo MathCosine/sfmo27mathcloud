@@ -15,6 +15,8 @@ type Item = { round: string; problem: string; raw: string; norm: string; v: numb
 export type BoxState = { state: 'typing' | 'saving' | 'saved' | 'waiting' | 'error'; at?: number; message?: string };
 
 const items = new Map<string, Item>();
+/** The last value the server confirmed for each box, until the next poll catches up. */
+const sent = new Map<string, string>();
 export const boxes = createStore<Record<string, BoxState>>({});
 let version = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -64,6 +66,12 @@ export function pendingFor(round: string, problem: string): string | undefined {
   return items.get(keyOf(round, problem))?.raw;
 }
 
+/** What this device last typed in a box: waiting to send, or just saved. */
+export function localFor(round: string, problem: string): string | undefined {
+  const key = keyOf(round, problem);
+  return items.get(key)?.raw ?? sent.get(key);
+}
+
 async function flush() {
   if (running) return;
   running = true;
@@ -73,6 +81,7 @@ async function flush() {
       try {
         await call('s_save', { token: token(), round: it.round, problem: it.problem, raw: it.raw, norm: it.norm });
         failures = 0;
+        sent.set(key, it.raw);
         if (items.get(key)?.v === it.v) {
           items.delete(key);
           setBox(key, { state: 'saved', at: Date.now() });

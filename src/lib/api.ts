@@ -112,8 +112,8 @@ export function backend(): Promise<Backend> {
 /** True after someone follows a password-reset link. */
 export const staffRecovery = createStore(false);
 
-/** Signed-out errors are routed here so the app can send people to sign in. */
-export const signedOut = createStore(0);
+/** Signed-out errors are routed here (with the reason) so the app can send people to sign in. */
+export const signedOut = createStore('');
 
 export async function call<T = any>(fn: string, p: object = {}, opts: { timeoutMs?: number; quiet?: boolean } = {}): Promise<T> {
   const b = await backend();
@@ -134,7 +134,7 @@ export async function call<T = any>(fn: string, p: object = {}, opts: { timeoutM
       err.code = 'timeout';
     }
     if (err.transient) markFailure();
-    if (err.code === 'signed_out' && fn.startsWith('s_')) signedOut.set((n) => n + 1);
+    if (err.code === 'signed_out' && fn.startsWith('s_')) signedOut.set(err.message);
     throw err;
   } finally {
     clearTimeout(timer);

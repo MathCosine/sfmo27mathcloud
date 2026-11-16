@@ -88,7 +88,7 @@ function Console({ roundId, tz }: { roundId: string; tz: string }) {
       <header>
         <div>
           <span className="eyebrow">Mystery console</span>
-          <div className="row" style={{ marginTop: 6 }}><h1 style={{ fontSize: 34 }}>{round.title}</h1><StateChip r={round} /></div>
+          <div className="row" style={{ marginTop: 6 }}><h1>{round.title}</h1><StateChip r={round} /></div>
           <p>Start {cfg.start ?? 200} · sinks {cfg.sink_rate ?? 0.1}/s · patch +{cfg.patch ?? 20} · torpedo −{cfg.torpedo ?? 10} · {d.problem_count} questions · {sunkCount} at Rock Bottom</p>
         </div>
         <div className="row"><RoundControls r={round} /><a className="btn btn-sm" href={`#board-${roundId}`} target="_blank" rel="noreferrer"><Icon name="monitor" size={15} />Projector</a></div>

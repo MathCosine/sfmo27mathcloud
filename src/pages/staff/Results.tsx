@@ -26,8 +26,8 @@ export function Results({ id }: { id?: string }) {
   const header = (
     <header>
       <div>
-        <span className="eyebrow">Results</span>
-        <h1 style={{ fontSize: 34, marginTop: 6 }}>{d?.round.title ?? 'Results'}</h1>
+        <p className="label-sm">Results</p>
+        <h1>{d?.round.title ?? 'Results'}</h1>
         <p>Scores update as answers come in and as you accept answers that aren't in the key. Only staff see this page.</p>
       </div>
       <select className="select" style={{ width: 'auto' }} value={rid} onChange={(e) => go(`staff-results-${e.target.value}`)} aria-label="Round">

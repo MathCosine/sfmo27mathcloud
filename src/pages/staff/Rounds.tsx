@@ -26,8 +26,8 @@ export function RoundsList() {
     <>
       <header>
         <div>
-          <span className="eyebrow">Set up</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>Rounds &amp; problems</h1>
+          <p className="label-sm">Set up</p>
+          <h1>Rounds &amp; problems</h1>
           <p>The rounds students see on their home page, in this order. Open one to change its settings and problems.</p>
         </div>
         {admin && <Button variant="primary" icon="plus" onClick={() => setCreate(true)}>New round</Button>}
@@ -115,7 +115,7 @@ export function RoundEditor({ id }: { id: string }) {
       <header>
         <div>
           <button className="btn btn-ghost btn-sm" style={{ marginLeft: -12 }} onClick={() => go('staff-rounds')}><Icon name="back" size={15} />All rounds</button>
-          <div className="row" style={{ marginTop: 6 }}><h1 style={{ fontSize: 34 }}>{r.title}</h1><StateChip r={r} /></div>
+          <div className="row" style={{ marginTop: 6 }}><h1>{r.title}</h1><StateChip r={r} /></div>
           <p>{KIND[r.kind]} · {r.minutes} minutes{r.scheduled_at ? ` · planned for ${timeOf(r.scheduled_at, tz)}` : ''}</p>
         </div>
         <RoundControls r={r} />
@@ -321,6 +321,13 @@ function RoundSettings({ r, admin, onSaved }: { r: StaffRound; admin: boolean; o
           <Switch id="rs-vis" checked={f.visible} onChange={(v) => admin && set({ visible: v })} label="Students can see this round" />
           {r.kind !== 'mystery' && <Switch id="rs-res" checked={f.show_results} onChange={(v) => admin && set({ show_results: v })} label="After it closes, students see their score and the answers" />}
         </div>
+      </section>
+
+      <section className="panel panel-pad stack" style={{ gap: 12 }}>
+        <h3>Proctoring</h3>
+        <Switch id="cfg-fs" checked={!!f.config.fullscreen} onChange={(v) => admin && cfg('fullscreen', v)} label="Students must stay in full screen (leaving hides the problems and is logged)" />
+        <Switch id="cfg-zoom" checked={!!f.config.zoom_checkin} onChange={(v) => admin && cfg('zoom_checkin', v)} label="Students check in first: in their team's Zoom room, camera on, microphone on" />
+        <p className="hint">Usual set-up: full screen for individual rounds; Zoom check-in for team rounds, where students need to see and hear each other. Proctors can hold anyone from the Proctoring page either way.</p>
       </section>
 
       {r.kind === 'mystery' && (

@@ -3,12 +3,14 @@ import { call, serverNow, useStore } from '../../lib/api';
 import { looksMathy, answerToTex } from '../../lib/answers';
 import { ago, clock, DEFAULT_TZ, ms, points, timeOf } from '../../lib/format';
 import { go, storageGet, storageSet, toast, usePoll, useTick } from '../../lib/hooks';
-import { flushSoon, outboxSummary, pendingFor, putAnswer, useBoxes } from '../../lib/outbox';
+import { flushSoon, localFor, outboxSummary, pendingFor, putAnswer, useBoxes } from '../../lib/outbox';
 import { token, useStudent } from '../../lib/session';
 import { Icon } from '../../ui/icons';
 import { Button, Check, ErrorNote, Modal, PageLoading, Rich, Spinner, Tex } from '../../ui/kit';
 import { Announcements, homeCache, type Announcement, type RoundInfo } from './StudentApp';
 import { MysteryRound } from './MysteryRound';
+import { CheckIn, HoldScreen, Paper, useFullscreenRule } from './Guard';
+import { exitFullscreen, heartbeat, isFullscreen } from '../../lib/proctor';
 
 type Problem = { id: string; number: number; set_no: number; points: number; body: string; answer?: string; correct?: boolean };
 type Resp = { raw: string; by: string; at: string };
@@ -19,9 +21,13 @@ export type RoundData = {
   responses: Record<string, Resp>;
   sets_done: number;
   score: number | null;
+  hold: string | null;
+  needs_checkin: boolean;
   board: { id: string; name: string; score: number; sets: number }[] | null;
   announcements: Announcement[];
 };
+
+const PLACEHOLDER = { id: '', kind: 'individual', title: '', blurb: '', rules: '', minutes: 0, scheduled_at: null, opens_at: null, closes_at: null, paused: false, state: 'waiting', show_results: false, config: {}, problem_count: 0, set_count: 0 } as RoundInfo;
 
 export function RoundPage({ id }: { id: string }) {
   const home = useStore(homeCache);
@@ -154,7 +160,7 @@ function TestRound({ id, kind }: { id: string; kind: 'individual' | 'guts' }) {
   const annSince = useRef(0);
 
   const data = usePoll(async () => {
-    const d = await call<RoundData>('s_round', { token: token(), round: id, ann_since: annSince.current });
+    const d = await call<RoundData>('s_round', { token: token(), round: id, ann_since: annSince.current, hb: heartbeat(id) });
     if (d.announcements.length) {
       annSince.current = Math.max(annSince.current, ...d.announcements.map((a) => a.id));
       setAnn((prev) => [...d.announcements, ...prev].slice(0, 6));
@@ -173,13 +179,20 @@ function TestRound({ id, kind }: { id: string; kind: 'individual' | 'guts' }) {
   }, [state, d, data.refresh]);
 
   const integ = useIntegrity(id, state === 'open', policy);
+  const fsGate = useFullscreenRule(d?.round ?? PLACEHOLDER, data.refresh);
+  useEffect(() => {
+    if (state === 'closed' && isFullscreen()) exitFullscreen();
+  }, [state]);
 
   if (!d) return <div className="wrap">{data.error ? <div className="page"><ErrorNote error={data.error} onRetry={data.refresh} /></div> : <PageLoading />}</div>;
   if (d.round.state === 'waiting') return <WaitingRoom round={d.round} tz={tz} />;
   if (d.round.state === 'closed') return <ClosedRound d={d} />;
+  if (d.needs_checkin) return <CheckIn round={d.round} onDone={data.refresh} />;
 
   return (
     <>
+      {d.hold && <HoldScreen reason={d.hold} />}
+      {fsGate}
       <div className="testbar">
         <div className="wrap testbar-in">
           <button className="btn btn-ghost btn-sm btn-icon" onClick={() => go('')} aria-label="Back to today"><Icon name="back" /></button>
@@ -199,7 +212,9 @@ function TestRound({ id, kind }: { id: string; kind: 'individual' | 'guts' }) {
             <Announcements items={ann} />
           </div>
         )}
-        {kind === 'individual' ? <IndividualBody d={d} /> : <GutsBody d={d} meTeam={me.student.team_id} refresh={data.refresh} />}
+        <div className={fsGate ? 'is-hidden' : ''}>
+          {kind === 'individual' ? <IndividualBody d={d} /> : <GutsBody d={d} meTeam={me.student.team_id} refresh={data.refresh} />}
+        </div>
       </div>
       {integ.warned !== null && <AwayNotice ms={integ.warned} onClose={integ.dismiss} />}
     </>
@@ -278,8 +293,8 @@ function IndividualBody({ d }: { d: RoundData }) {
     storageSet(flagKey, next);
   };
   const answered = (pid: string) => {
-    const pending = pendingFor(d.round.id, pid);
-    return pending !== undefined ? pending.trim() !== '' : !!d.responses[pid]?.raw;
+    const local = localFor(d.round.id, pid);
+    return local !== undefined ? local.trim() !== '' : !!d.responses[pid]?.raw;
   };
   void boxes;
   const count = d.problems.filter((p) => answered(p.id)).length;
@@ -305,20 +320,21 @@ function IndividualBody({ d }: { d: RoundData }) {
         <div className="rules-intro">
           <Rich text={d.round.rules} className="muted" />
         </div>
+        <Paper roundId={d.round.id}>
         {d.problems.map((p, i) => (
           <section key={p.id} id={`p-${p.number}`} className="problem" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
-            <div className="problem-n"><b>{p.number}</b>{p.points !== 1 ? `${points(p.points)} pts` : ''}</div>
-            <div style={{ minWidth: 0 }}>
-              <Rich text={p.body} />
-              <div className="row" style={{ alignItems: 'flex-start' }}>
-                <div className="grow"><AnswerBox round={d.round.id} problem={p.id} server={d.responses[p.id]} meId={me.student.id} label={`Answer to problem ${p.number}`} /></div>
-                <button className={`btn btn-ghost btn-sm flag-btn ${flags.includes(p.id) ? 'on' : ''}`} style={{ marginTop: 22 }} onClick={() => toggle(p.id)} aria-pressed={flags.includes(p.id)}>
-                  <Icon name="flag" size={15} />{flags.includes(p.id) ? 'Flagged' : 'Flag'}
-                </button>
-              </div>
+            <div className="problem-n"><b>{p.number}</b>{p.points !== 1 && <small>{points(p.points)} pts</small>}</div>
+            <div className="q-text"><Rich text={p.body} /></div>
+            <div className="q-answer">
+              <span className="label-sm">Answer</span>
+              <AnswerBox round={d.round.id} problem={p.id} server={d.responses[p.id]} meId={me.student.id} label={`Answer to problem ${p.number}`} />
+              <button className={`btn btn-ghost btn-xs flag-btn ${flags.includes(p.id) ? 'on' : ''}`} style={{ marginTop: 6, marginLeft: -8 }} onClick={() => toggle(p.id)} aria-pressed={flags.includes(p.id)}>
+                <Icon name="flag" size={14} />{flags.includes(p.id) ? 'Flagged to come back to' : 'Flag to come back to'}
+              </button>
             </div>
           </section>
         ))}
+        </Paper>
         <div className="sunk" style={{ marginTop: 28, padding: '20px 22px', display: 'flex', gap: 14, alignItems: 'center' }}>
           <Icon name="check" size={20} />
           <div className="grow">
@@ -403,18 +419,21 @@ function GutsBody({ d, meTeam, refresh }: { d: RoundData; meTeam: string; refres
               </div>
               <span className="faint" style={{ fontSize: 13 }}>Shared with your team · {filled}/{cur.length} filled</span>
             </div>
+            <Paper roundId={d.round.id}>
             {cur.map((p) => (
-              <section key={p.id} className="problem" style={{ gridTemplateColumns: '44px minmax(0,1fr)' }}>
-                <div className="problem-n"><b style={{ fontSize: 22 }}>{p.number}</b></div>
-                <div style={{ minWidth: 0 }}>
-                  <Rich text={p.body} />
+              <section key={p.id} className="problem">
+                <div className="problem-n"><b>{p.number}</b></div>
+                <div className="q-text"><Rich text={p.body} /></div>
+                <div className="q-answer">
+                  <span className="label-sm">Team answer</span>
                   <AnswerBox round={d.round.id} problem={p.id} server={d.responses[p.id]} meId={me.student.id} label={`Answer to problem ${p.number}`} />
                 </div>
               </section>
             ))}
+            </Paper>
             <div className="spread" style={{ paddingTop: 20 }}>
               <span className="faint" style={{ fontSize: 13.5, maxWidth: 380 }}>Once your team hands in this set, nobody can change it and the next set opens.</span>
-              <Button variant="primary" size="lg" arrow onClick={() => setConfirm(true)} disabled={d.round.state !== 'open'}>Hand in set {current}</Button>
+              <Button variant="accent" size="lg" arrow onClick={() => setConfirm(true)} disabled={d.round.state !== 'open'}>Hand in set {current}</Button>
             </div>
           </div>
         )}
@@ -512,17 +531,15 @@ function ClosedRound({ d }: { d: RoundData }) {
             <div className="stat"><span className="eyebrow">Score</span><b>{points(d.score ?? 0)}</b></div>
             <div className="stat"><span className="eyebrow">Correct</span><b>{d.problems.filter((p) => p.correct).length}/{d.problems.length}</b></div>
           </div>
-          <div style={{ marginTop: 24 }}>
+          <div className="paper" style={{ marginTop: 24 }}>
             {d.problems.map((p) => (
               <section key={p.id} className="problem">
                 <div className="problem-n"><b>{p.number}</b></div>
-                <div style={{ minWidth: 0 }}>
-                  <Rich text={p.body} />
-                  <div className="row" style={{ marginTop: 12 }}>
-                    <span className={`chip ${p.correct ? 'chip-good' : 'chip-bad'}`}>{p.correct ? 'Correct' : d.responses[p.id] ? 'Not this time' : 'Blank'}</span>
-                    <span className="mono">Yours: {d.responses[p.id]?.raw || '—'}</span>
-                    <span className="mono faint">Answer: {p.answer?.split('|')[0].trim()}</span>
-                  </div>
+                <div className="q-text"><Rich text={p.body} /></div>
+                <div className="q-answer stack" style={{ gap: 4 }}>
+                  <span className={`chip ${p.correct ? 'chip-good' : 'chip-bad'}`} style={{ alignSelf: 'flex-start' }}>{p.correct ? 'Correct' : d.responses[p.id] ? 'Not this time' : 'Blank'}</span>
+                  <span className="mono">Yours: {d.responses[p.id]?.raw || '—'}</span>
+                  <span className="mono faint">Answer: {p.answer?.split('|')[0].trim()}</span>
                 </div>
               </section>
             ))}

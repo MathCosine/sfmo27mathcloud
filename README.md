@@ -33,10 +33,15 @@ connection** to show what students see in an outage.
 - Guts: shared answers for the team, hand in a set to open the next, live board.
 - Mystery Dive: live depth, sonar, standings, attack feed, proctor events as banners, one try per question,
   patch or torpedo after each hit.
-- Leaving the test tab is logged (and, by default, the student is told).
+- Proctoring: individual rounds run in full screen (leaving hides the problems and is logged); team rounds start
+  with a Zoom check-in (camera and microphone on) that the database enforces; one device per student; problem text
+  can't be copied and is watermarked with the student's ID; proctors can hold a student or team, which locks their
+  screen and blocks their answers until released.
 
 **Staff** (`/#staff`, Supabase accounts + invite codes)
 - Control room: start, schedule, pause, +5 min, close, reopen and reset each round; announcements; who's online.
+- Proctoring: every student live (online, round, full screen, tab in front, checked in, flags), filtered to who
+  needs a look, with hold and release for a student or a whole team.
 - Mystery console: 13 one-click events plus custom ones, active effects, per-team adjustments, full log.
 - Rounds & problems: create rounds of any type, edit rules and timing, paste problems from a spreadsheet, preview.
 - Teams & students: CSV import with column matching, edit, extra time, sign out, pause a student.

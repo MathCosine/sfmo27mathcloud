@@ -97,6 +97,8 @@ class Bots {
       const s = (await this.db.query<{ id: string; email: string }>(`select id, email from students where team_id = $1 order by id limit 1`, [id])).rows[0];
       const r = await this.api('s_sign_in', { id: s.id, email: s.email });
       this.tokens.set(id, r.token);
+      // Bots are always on camera.
+      for (const round of ['mystery', 'guts']) await this.api('s_checkin', { token: r.token, round, room: true, camera: true, mic: true });
       this.skill.set(id, 0.45 + Math.random() * 0.45);
     }
   }

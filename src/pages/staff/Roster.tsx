@@ -51,8 +51,8 @@ export function Roster() {
     <>
       <header>
         <div>
-          <span className="eyebrow">Set up</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>Teams &amp; students</h1>
+          <p className="label-sm">Set up</p>
+          <h1>Teams &amp; students</h1>
           <p>{teams.length} teams · {all.length} students · {all.filter((s) => s.devices).length} online now · {all.filter((s) => !s.sessions).length} haven't signed in today. Students sign in with their ID and this email.</p>
         </div>
         <div className="row">

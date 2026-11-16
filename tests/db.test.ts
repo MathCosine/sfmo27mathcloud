@@ -17,6 +17,7 @@ async function signIn(id: string, email: string) {
   expect(r.error).toBeUndefined();
   return r.token as string;
 }
+const checkIn = (token: string, round: string) => t.call('s_checkin', { token, round, room: true, camera: true, mic: true });
 
 beforeAll(async () => {
   t = await new TestDb().init();
@@ -189,6 +190,8 @@ describe('guts', () => {
     const ada = await signIn('07A', 'ada@example.com');
     const cy = await signIn('12A', 'cy@example.com');
     await t.call('st_round_control', { id: 'guts', action: 'start' }, proctor);
+    await checkIn(ada, 'guts');
+    await checkIn(cy, 'guts');
     const ids = (await t.sql<{ id: string }>(`select id from problems where round_id = 'guts' order by number`)).map((x) => x.id);
     let r = await t.call('s_round', { token: ada, round: 'guts' });
     expect(r.problems.map((p: Json) => p.set_no)).toEqual([1, 1]);
@@ -224,6 +227,7 @@ describe('mystery dive', () => {
     di = await signIn('15A', 'di@example.com');
     q = (await t.sql<{ id: string }>(`select id from problems where round_id = 'mystery' order by number`)).map((x) => x.id);
     await t.call('st_round_control', { id: 'mystery', action: 'start' }, proctor);
+    for (const tok of [ada, cy, di]) await checkIn(tok, 'mystery');
   });
 
   it('starts everyone at 200 and sinks them at the set rate', async () => {
@@ -398,5 +402,65 @@ describe('live rule changes', () => {
     await t2.tick(10);
     const b2 = await t2.call('st_mystery', {}, a);
     expect(b2.board.find((x: Json) => x.id === '07').score).toBeCloseTo(180, 6);
+  });
+});
+
+describe('proctoring', () => {
+  it('keeps a team round shut until the student checks in on Zoom', async () => {
+    const t3 = await new TestDb().init();
+    const a = await t3.admin();
+    await t3.call('st_roster_import', { rows: roster }, a);
+    await t3.call('st_problems_save', { round: 'guts', problems: [{ body: 'x', answer: '1', keys: ['1'], set_no: 1 }] }, a);
+    await t3.call('st_round_control', { id: 'guts', action: 'start' }, a);
+    const tok = (await t3.call('s_sign_in', { id: '07A', email: 'ada@example.com' })).token;
+    let r = await t3.call('s_round', { token: tok, round: 'guts' });
+    expect(r.needs_checkin).toBe(true);
+    expect(r.problems).toEqual([]);
+    const pid = (await t3.sql<{ id: string }>(`select id from problems where round_id = 'guts'`))[0].id;
+    expect((await t3.fails('s_save', { token: tok, round: 'guts', problem: pid, raw: '1', norm: '1' })).hint).toBe('checkin');
+    expect((await t3.fails('s_checkin', { token: tok, round: 'guts', room: true, camera: true, mic: false })).hint).toBe('invalid');
+    await t3.call('s_checkin', { token: tok, round: 'guts', room: true, camera: true, mic: true });
+    r = await t3.call('s_round', { token: tok, round: 'guts' });
+    expect(r.needs_checkin).toBe(false);
+    expect(r.problems).toHaveLength(1);
+    await t3.call('s_save', { token: tok, round: 'guts', problem: pid, raw: '1', norm: '1' });
+
+    // A hold locks the student out of answering until it is released.
+    await t3.call('st_hold', { team_id: '07', reason: 'camera is off' }, a);
+    expect((await t3.call('s_round', { token: tok, round: 'guts' })).hold).toBe('camera is off');
+    const held = await t3.fails('s_save', { token: tok, round: 'guts', problem: pid, raw: '2', norm: '2' });
+    expect(held.hint).toBe('hold');
+    expect(held.message).toMatch(/camera is off/);
+    await t3.call('st_hold', { team_id: '07', release: true }, a);
+    await t3.call('s_save', { token: tok, round: 'guts', problem: pid, raw: '2', norm: '2' });
+
+    // Proctors see the live state the page reports.
+    await t3.call('s_round', { token: tok, round: 'guts', hb: { round: 'guts', fs: false, vis: true } });
+    const view = await t3.call('st_proctor', {}, a);
+    const ada = view.teams.find((x: Json) => x.id === '07').students.find((x: Json) => x.id === '07A');
+    expect(ada.live).toMatchObject({ round: 'guts', fullscreen: false, visible: true });
+    expect(ada.checkins).toEqual(['guts']);
+    expect(ada.devices).toBe(1);
+    expect(view.live.map((x: Json) => x.id)).toEqual(['guts']);
+  });
+
+  it('signs out the old device when a student signs in on another', async () => {
+    const t4 = await new TestDb().init();
+    const a = await t4.admin();
+    await t4.call('st_roster_import', { rows: roster }, a);
+    const first = (await t4.call('s_sign_in', { id: '07A', email: 'ada@example.com' })).token;
+    const second = (await t4.call('s_sign_in', { id: '07A', email: 'ada@example.com' })).token;
+    const e = await t4.fails('s_home', { token: first });
+    expect(e.hint).toBe('signed_out');
+    expect(e.message).toMatch(/another device/);
+    await t4.call('s_home', { token: second });
+    await t4.call('st_roster_change', { action: 'sign_out', student_id: '07A' }, a);
+    expect((await t4.fails('s_home', { token: second })).message).toMatch(/proctor signed you out/);
+    // Turned off, both devices stay signed in.
+    await t4.call('st_settings_save', { data: { single_device: false } }, a);
+    const x = (await t4.call('s_sign_in', { id: '07A', email: 'ada@example.com' })).token;
+    const y = (await t4.call('s_sign_in', { id: '07A', email: 'ada@example.com' })).token;
+    await t4.call('s_home', { token: x });
+    await t4.call('s_home', { token: y });
   });
 });
