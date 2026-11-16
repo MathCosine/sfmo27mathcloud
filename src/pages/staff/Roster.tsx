@@ -92,13 +92,14 @@ export function Roster() {
               </div>
             </div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table" style={{ tableLayout: 'fixed', minWidth: 760 }}>
+                <colgroup><col style={{ width: 70 }} /><col style={{ width: '22%' }} /><col style={{ width: '27%' }} /><col style={{ width: 150 }} /><col style={{ width: 70 }} /><col style={{ width: 120 }} /><col style={{ width: 190 }} /></colgroup>
                 <tbody>
                   {t.students.map((s) => (
                     <tr key={s.id} style={{ opacity: s.disabled ? 0.55 : 1 }}>
                       <td style={{ width: 70 }} className="mono">{s.id}</td>
                       <td><b style={{ fontWeight: 500 }}>{s.name}</b>{s.disabled && <span className="chip chip-warn" style={{ marginLeft: 8 }}>Paused</span>}</td>
-                      <td className="muted" style={{ fontSize: 13.5 }}>{s.email}</td>
+                      <td className="muted" style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.email}>{s.email}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {s.devices ? <span className="chip chip-good"><span className="dot" />Online{s.devices > 1 ? ` · ${s.devices} devices` : ''}</span> : s.last_seen ? <span className="faint" style={{ fontSize: 13 }}>Seen {ago(s.last_seen)}</span> : <span className="faint" style={{ fontSize: 13 }}>Not signed in</span>}
                       </td>

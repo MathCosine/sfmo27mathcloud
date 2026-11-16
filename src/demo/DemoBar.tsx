@@ -4,7 +4,7 @@ import { go, storageSet, toast } from '../lib/hooks';
 import { studentSignIn, studentSession } from '../lib/session';
 import { Icon } from '../ui/icons';
 import { Spinner } from '../ui/kit';
-import { DEMO_PASSWORD, DEMO_STAFF, DEMO_STUDENT } from './constants';
+import { DEMO_PASSWORD, DEMO_STAFF, DEMO_STUDENT, outage } from './constants';
 
 const ready = createStore(false);
 if (IS_DEMO) backend().then(() => ready.set(true)).catch((e) => console.error('demo failed to start', e));
@@ -12,6 +12,7 @@ if (IS_DEMO) backend().then(() => ready.set(true)).catch((e) => console.error('d
 /** The demo's own controls: jump between the people who use the portal. */
 export function DemoBar() {
   const isReady = useStore(ready);
+  const down = useStore(outage);
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState('');
 
@@ -55,6 +56,9 @@ export function DemoBar() {
             <button onClick={() => asStaff(0)} disabled={!isReady || !!busy}>{busy === 'staff0' ? <Spinner size={12} /> : <Icon name="key" size={14} />}Director</button>
             <button onClick={() => asStaff(1)} disabled={!isReady || !!busy}>{busy === 'staff1' ? <Spinner size={12} /> : <Icon name="eye" size={14} />}Proctor</button>
             <button onClick={() => { go('board-mystery'); setOpen(false); }} disabled={!isReady}><Icon name="monitor" size={14} />Projector</button>
+            <button onClick={() => outage.set(!down)} disabled={!isReady} aria-pressed={down} className={down ? 'on' : ''} title="Pretend the internet drops, to see answers wait and then send">
+              <Icon name="signal" size={14} />{down ? 'Bring connection back' : 'Drop connection'}
+            </button>
             <button
               onClick={() => {
                 studentSession.set(null);

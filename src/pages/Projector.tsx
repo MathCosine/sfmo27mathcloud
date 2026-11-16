@@ -65,13 +65,13 @@ export default function Projector({ round }: { round: string }) {
       <div className={mystery ? 'projector-grid' : ''} style={mystery ? undefined : { maxWidth: 980, width: '100%', margin: '0 auto' }}>
         {mystery && (
           <div style={{ display: 'grid', placeItems: 'center' }}>
-            <div style={{ width: 'min(640px, 100%)' }}>
+            <div style={{ width: 'min(640px, 100%, calc(100vh - 190px))' }}>
               <Sonar blips={d.board.map((b) => ({ id: b.id, score: scoreAt(b, readAt.current), sunk: b.sunk }))} max={Number(d.round.config.start ?? 200)} />
             </div>
           </div>
         )}
         <div style={{ minWidth: 0 }}>
-          {rows.slice(0, 14).map((b, i) => (
+          {rows.slice(0, mystery ? 12 : 16).map((b, i) => (
             <div key={b.id} className={`pboard-row ${b.sunk ? 'sunk' : ''}`}>
               <span className="mono" style={{ color: 'var(--deep-ink-2)' }}>{i + 1}</span>
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><span className="mono" style={{ color: 'var(--deep-ink-2)', marginRight: 10 }}>{b.id}</span>{b.name}</span>
@@ -80,7 +80,7 @@ export default function Projector({ round }: { round: string }) {
           ))}
           {mystery && (
             <div style={{ marginTop: 22, background: 'var(--bg)', color: 'var(--ink)', borderRadius: 18, padding: '8px 16px' }}>
-              <Feed items={feed.slice(0, 6)} names={names} tz={DEFAULT_TZ} />
+              <Feed items={feed.slice(0, 3)} names={names} tz={DEFAULT_TZ} />
             </div>
           )}
         </div>

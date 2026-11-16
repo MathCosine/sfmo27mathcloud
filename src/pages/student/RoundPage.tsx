@@ -112,7 +112,7 @@ function SaveSummary({ round }: { round: string }) {
   const boxes = useBoxes();
   useTick(5000);
   const s = outboxSummary(boxes, round);
-  if (s.waiting) return <span className="save-state" style={{ color: 'var(--warn)' }}><Icon name="signal" size={15} />{s.waiting} waiting for connection</span>;
+  if (s.waiting) return <span className="save-state waiting" style={{ color: 'var(--warn)' }}><Icon name="signal" size={15} />{s.waiting} waiting for connection</span>;
   if (s.saving) return <span className="save-state"><Spinner size={14} />Saving…</span>;
   if (s.last) return <span className="save-state"><Icon name="check" size={15} />All answers saved</span>;
   return <span className="save-state">Answers save as you type</span>;
@@ -302,7 +302,7 @@ function IndividualBody({ d }: { d: RoundData }) {
         <p className="faint" style={{ fontSize: 12.5, marginTop: 14 }}>Flag a problem to come back to it. Flags stay on this device.</p>
       </nav>
       <div style={{ minWidth: 0 }}>
-        <div className="rich muted" style={{ fontSize: 14.5, paddingBottom: 18, borderBottom: '1px solid var(--line)' }}>
+        <div className="rules-intro">
           <Rich text={d.round.rules} className="muted" />
         </div>
         {d.problems.map((p, i) => (

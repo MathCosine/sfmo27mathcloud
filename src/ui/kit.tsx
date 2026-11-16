@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { connection, useStore } from '../lib/api';
 import { toasts } from '../lib/hooks';
 import { rich, tex } from '../lib/rich';
@@ -58,7 +59,7 @@ export function ConnectionPill() {
   return (
     <span className={`conn conn-${c.state}`} role="status" aria-live="polite" title={c.state === 'ok' ? 'Connected to the contest server' : 'Your answers are kept on this device and sent when the connection is back'}>
       <span className={`dot ${c.state === 'ok' ? 'dot-live' : ''}`} />
-      {label}
+      <span className="conn-label">{label}</span>
     </span>
   );
 }
@@ -94,12 +95,13 @@ export function Modal({ onClose, children, wide, label }: { onClose: () => void;
       prev?.focus?.();
     };
   }, [onClose]);
-  return (
+  return createPortal(
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={label}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

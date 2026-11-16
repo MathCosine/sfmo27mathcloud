@@ -56,13 +56,13 @@ export function RoundControls({ r, size = 'sm' }: { r: StaffRound; size?: 'sm' |
           <Button size={size} icon="pause" busy={busy === 'pause'} onClick={() => run('pause', {}, `${r.title} paused.`)}>Pause</Button>
           <Button size={size} icon="plus" busy={busy === 'extend'} onClick={() => run('extend', { minutes: 5 }, '5 minutes added.')}>5 min</Button>
           <Button size={size} icon="minus" variant="ghost" onClick={() => run('extend', { minutes: -1 }, 'Took a minute off.')} aria-label="Take a minute off" />
-          <Button size={size} variant="danger" icon="stop" onClick={() => setAsk('close')}>Close</Button>
+          <Button size={size} icon="stop" onClick={() => setAsk('close')}>Close</Button>
         </>
       )}
       {r.state === 'paused' && (
         <>
           <Button size={size} variant="accent" icon="play" busy={busy === 'resume'} onClick={() => run('resume', {}, `${r.title} resumed.`)}>Resume</Button>
-          <Button size={size} variant="danger" icon="stop" onClick={() => setAsk('close')}>Close</Button>
+          <Button size={size} icon="stop" onClick={() => setAsk('close')}>Close</Button>
         </>
       )}
       {r.state === 'closed' && (
@@ -157,7 +157,7 @@ export function ControlRoom() {
       <header>
         <div>
           <span className="eyebrow">{s.settings.event_name} · {s.settings.event_subtitle}</span>
-          <h1 style={{ fontSize: 34, marginTop: 6 }}>{live.length ? `${live.map((r) => r.title).join(' and ')} ${live.length > 1 ? 'are' : 'is'} live` : 'Control room'}</h1>
+          <h1 style={{ fontSize: 34, marginTop: 6 }}>{live.length === 0 ? 'Control room' : live.length === 1 ? `${live[0].title} is live` : live.length === 2 ? `${live[0].title} and ${live[1].title} are live` : `${live.length} rounds are live`}</h1>
           <p>{s.counts.online} of {s.counts.students} students are online right now{s.counts.flags ? `, and ${s.counts.flags} tab switches were logged in the last 15 minutes` : ''}.</p>
         </div>
         <div className="row">

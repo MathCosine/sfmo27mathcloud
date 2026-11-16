@@ -10,7 +10,7 @@ import { ApiError, type Backend, type StaffUser } from '../lib/api';
 import { keysFor, normalize } from '../lib/answers';
 import { GUTS, GUTS_POINTS, INDIVIDUAL, MYSTERY, PRACTICE, type DemoProblem } from './problems';
 
-import { DEMO_PASSWORD, DEMO_STAFF, DEMO_STUDENT } from './constants';
+import { DEMO_PASSWORD, DEMO_STAFF, DEMO_STUDENT, outage } from './constants';
 
 const TEAMS: [string, string, string[]][] = [
   ['03', 'Bathysphere', ['Maya Chen', 'Leo Okafor', 'Sana Mirza']],
@@ -218,6 +218,11 @@ export async function createDemoBackend(): Promise<Backend> {
     async call(fn, p) {
       if (!/^(s|st|public)_[a-z_]+$/.test(fn)) throw new ApiError('Unknown function.', 'invalid');
       await delay(60 + rand(140));
+      // The demo bar can cut the "network" to show what students see in an outage.
+      if (outage.get()) {
+        await delay(900);
+        throw new ApiError('Could not reach the server. Retrying…', 'network', true);
+      }
       return lock(async () => {
         try {
           return await db.transaction(async (tx) => {

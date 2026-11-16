@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ApiError, call, serverNow, useStore } from '../../lib/api';
 import { normalize } from '../../lib/answers';
 import { DEFAULT_TZ, ms, points, score1, timeOf } from '../../lib/format';
@@ -94,7 +95,7 @@ export function EventBanner({ f, onDone }: { f: FeedItem; onDone: () => void }) 
     const t = setTimeout(onDone, 7000);
     return () => clearTimeout(t);
   }, [onDone]);
-  return (
+  return createPortal(
     <div className="event-banner" role="alert">
       <span className="badge"><Icon name={EVENT_ICONS[f.meta?.icon] ?? 'bolt'} size={22} /></span>
       <div style={{ minWidth: 0 }}>
@@ -103,7 +104,8 @@ export function EventBanner({ f, onDone }: { f: FeedItem; onDone: () => void }) 
         {f.message && <p style={{ color: 'var(--deep-ink-2)', fontSize: 14, marginTop: 2 }}>{f.message}</p>}
       </div>
       <button className="btn btn-ghost btn-sm btn-icon" style={{ color: 'var(--deep-ink)' }} onClick={onDone} aria-label="Dismiss"><Icon name="x" size={16} /></button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -229,7 +231,7 @@ export function MysteryRound({ id }: { id: string }) {
                 <Button variant="good" size="sm" onClick={() => setSpend(true)}>Use it</Button>
               </div>
             )}
-            <div className="rich muted" style={{ fontSize: 14.5, paddingBottom: 18, borderBottom: '1px solid var(--line)' }}>
+            <div className="rules-intro">
               <Rich text={d.round.rules} className="muted" />
             </div>
             {problems ? (
